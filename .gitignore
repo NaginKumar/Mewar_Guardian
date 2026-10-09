@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+.env
+
+# Mobile (Flutter)
+mewar_guardian/build/
+mewar_guardian/.dart_tool/
+mewar_guardian/.flutter-plugins
+mewar_guardian/.flutter-plugins-dependencies
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.log
+
+# Local databases and generated files
+*.db
+*.sqlite
+*.sqlite3

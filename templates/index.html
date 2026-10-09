@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mewar Guardian – Campus Safety</title>
+<meta name="description" content="AI-powered campus emergency detection and response for Mewar University">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+<!-- SOS OVERLAY -->
+<div id="sos-overlay" class="sos-overlay hidden">
+  <div class="sos-card">
+    <div class="sos-card-header">🚨 SOS SENT</div>
+    <div id="sos-details"></div>
+    <div class="sos-tracking">
+      <div class="sos-row"><span>Status:</span><span id="sos-status" class="badge badge-pending">Pending</span></div>
+      <div class="sos-row"><span>ETA:</span><span id="sos-eta">Calculating…</span></div>
+      <div class="sos-row"><span>Location:</span><span id="sos-location">–</span></div>
+    </div>
+    <button class="btn btn-outline" onclick="closeSOSOverlay()">Continue Chatting</button>
+  </div>
+</div>
+
+<!-- NOTIFICATION TOAST -->
+<div id="toast-container"></div>
+
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-brand">
+    <span class="brand-shield">🛡️</span>
+    <div>
+      <div class="brand-name">Mewar <span class="brand-accent">Guardian</span></div>
+      <div class="brand-sub">AI-Powered Campus Safety & Emergency Response</div>
+    </div>
+  </div>
+  <div class="header-center">
+    <div class="system-status">
+      <span class="status-dot"></span>
+      <span id="ai-engine-label">System Online</span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-sos" id="global-sos-btn" onclick="triggerManualSOS()">
+      🚨 SOS
+    </button>
+    <a href="/security" class="btn btn-outline-sm">Security Dashboard</a>
+  </div>
+</header>
+
+<!-- NAV TABS -->
+<nav class="tab-nav">
+  <button class="tab-btn active" data-tab="home">🏠 Home / Report</button>
+  <button class="tab-btn" data-tab="track">📍 Track Emergency</button>
+  <button class="tab-btn" data-tab="map">🗺️ Campus Map</button>
+  <button class="tab-btn" data-tab="chat">💬 AI Assistant</button>
+  <button class="tab-btn" data-tab="safety">🛡️ Safety Info</button>
+</nav>
+
+<!-- MAIN CONTENT -->
+<main class="main-content">
+
+<!-- TAB: HOME / STUDENT PORTAL -->
+<section id="tab-home" class="tab-pane active">
+  <div class="page-card" style="max-width: 1000px;">
+    <div class="page-title">🎓 Student Safety Portal</div>
+    <div class="page-sub">Welcome to Rakshak AI. Please provide your details and report any emergency below.</div>
+
+    <div class="two-col-layout">
+      <!-- LEFT COLUMN: STUDENT INFO -->
+      <div class="col-card">
+        <div class="col-title">👤 STUDENT INFORMATION</div>
+        <div class="form-group mt-16">
+          <label class="form-label">Full Name *</label>
+          <input type="text" id="global-name" class="form-input" placeholder="e.g. Nagin Daksh" maxlength="50">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mobile Number *</label>
+          <input type="tel" id="global-mobile" class="form-input" placeholder="e.g. 8076731005" maxlength="10" pattern="[6-9][0-9]{9}" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 10)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Enrollment Number *</label>
+          <input type="text" id="global-enrollment" class="form-input" placeholder="e.g. MUR2502331" maxlength="13" oninput="this.value = this.value.toUpperCase()">
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: EMERGENCY INFO -->
+      <div class="col-card">
+        <div class="col-title">🚨 EMERGENCY INFORMATION</div>
+        
+        <div class="form-group" style="background:rgba(59,130,246,0.05); padding:16px; border:1px solid rgba(59,130,246,0.2); border-radius:12px; margin-top:16px; margin-bottom: 24px;">
+          <label class="form-label" style="color:#3b82f6; font-size:16px; margin-bottom:12px;">📍 CURRENT LOCATION</label>
+          <div id="home-gps-status" class="gps-status" style="margin-bottom: 12px; font-weight:600; font-size:15px;">[ Detecting Location... ]</div>
+          <button class="btn btn-outline btn-full" onclick="getGPSLocation()">📡 Detect My Location via GPS</button>
+          
+          <div style="margin: 16px 0; text-align: center; color: var(--text3); font-size: 12px; font-weight: 700;">OR</div>
+          
+          <label class="form-label">Select Campus Location Manually</label>
+          <input type="text" id="home-loc-search" class="form-input" placeholder="Search campus location…" oninput="filterHomeLocations(this.value)">
+          <select id="home-location" class="form-select mt-8"></select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Emergency Type (Optional)</label>
+          <select id="report-type" class="form-select">
+            <option value="">Let AI Decide</option>
+            <option value="Medical">🚑 Medical</option>
+            <option value="Fire">🔥 Fire</option>
+            <option value="Security">🛡️ Security Issue</option>
+            <option value="Accident">🚗 Accident</option>
+            <option value="Threat">⚠️ Threat</option>
+            <option value="Harassment">🚨 Harassment</option>
+            <option value="Other">📌 Other</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">📝 Describe the Emergency</label>
+          <textarea id="report-desc" class="form-textarea" placeholder="Describe what happened, where it happened, and any important details..." rows="6"></textarea>
+        </div>
+      </div>
+    </div>
+    
+    <div style="display: flex; gap: 16px; margin-top: 24px;">
+      <button class="btn btn-primary btn-full" style="padding: 16px; font-size: 16px;" onclick="submitReport()">🚨 REPORT EMERGENCY</button>
+      <button class="btn btn-sos btn-full" style="padding: 16px; font-size: 16px;" onclick="triggerManualSOS()">🚨 SOS</button>
+    </div>
+    
+    <div id="report-result" class="report-result hidden"></div>
+  </div>
+</section>
+
+<!-- TAB: AI CHAT -->
+<section id="tab-chat" class="tab-pane">
+  <div class="chat-layout">
+    <div class="chat-sidebar">
+      <div class="sidebar-card">
+        <div class="sidebar-title mt-16">Quick Questions</div>
+        <div class="quick-btns">
+          <button class="quick-btn" onclick="sendQuick('What should I do if I see fire in hostel?')">🔥 Fire safety</button>
+          <button class="quick-btn" onclick="sendQuick('Someone has fainted, what to do?')">🏥 Medical help</button>
+          <button class="quick-btn" onclick="sendQuick('There is a fight near canteen, I am scared')">⚔️ Security issue</button>
+          <button class="quick-btn" onclick="sendQuick('Mujhe bahut dar lag raha hai')">😰 I am scared</button>
+          <button class="quick-btn" onclick="sendQuick('How does Rakshak AI work?')">❓ How it works</button>
+          <button class="quick-btn" onclick="sendQuick('What are the emergency contacts?')">📞 Contacts</button>
+        </div>
+        <div class="sidebar-title mt-16">Location</div>
+        <input type="text" id="location-search" class="form-input" placeholder="Search campus location…" oninput="filterLocations(this.value)">
+        <select id="location-select" class="form-select" size="4">
+        </select>
+        <button class="btn btn-sm btn-outline mt-8" onclick="getGPSLocation()">📡 Use My GPS</button>
+        <div id="gps-status" class="gps-status"></div>
+      </div>
+    </div>
+
+    <div class="chat-main">
+      <div class="chat-header">
+        <div class="chat-title">
+          <div class="ai-avatar">🛡️</div>
+          <div>
+            <div class="chat-name">Rakshak AI</div>
+            <div class="chat-desc" id="chat-ai-status">AI Emergency Assistant • Online</div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="clearChat()">🗑️ Clear</button>
+      </div>
+
+      <div class="chat-messages" id="chat-messages">
+        <div class="msg msg-ai">
+          <div class="msg-avatar">🛡️</div>
+          <div class="msg-bubble">
+            <p>Namaste! 🙏 Main <strong>Rakshak AI</strong> hoon — aapka campus safety assistant.</p>
+            <p>Aap mujhse kisi bhi emergency ke baare mein baat kar sakte hain — <strong>Hindi, English, ya Hinglish</strong> mein.</p>
+            <p style="margin-top:8px;opacity:0.8;font-size:13px;">💡 Kuch aisa type karein jaise: "mere saamne ek aadmi behosh ho gaya hai" ya "hostel me aag lag gayi hai"</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="emergency-action-bar" class="emergency-action-bar hidden">
+        <div class="ea-info">
+          <span id="ea-type-badge" class="badge"></span>
+          <span id="ea-location-text"></span>
+        </div>
+        <button class="btn btn-sos" id="ea-sos-btn" onclick="confirmSOS()">🚨 SEND SOS</button>
+        <button class="btn btn-outline" onclick="dismissEmergencyBar()">Dismiss</button>
+      </div>
+
+      <div class="chat-input-row">
+        <textarea id="chat-input" class="chat-textarea" placeholder="Kuch bhi type karein… (Hindi / English / Hinglish)" rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
+          oninput="autoResize(this)"></textarea>
+        <button class="btn btn-primary send-btn" onclick="sendChat()" id="send-btn">
+          <span>Send</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+
+<!-- TAB: TRACK -->
+<section id="tab-track" class="tab-pane">
+  <div class="page-card">
+    <div class="page-title">📍 Track Your Emergency</div>
+    <div class="page-sub">Enter your Emergency ID to track the response status.</div>
+    <div class="track-input-row">
+      <input type="number" id="track-id" class="form-input" placeholder="Emergency ID (e.g. 1024)">
+      <button class="btn btn-primary" onclick="trackEmergency()">Track</button>
+    </div>
+    <div id="track-result"></div>
+    <div id="track-map" class="track-map hidden"></div>
+  </div>
+</section>
+
+<!-- TAB: MAP -->
+<section id="tab-map" class="tab-pane">
+  <div class="map-header">
+    <div class="page-title">🗺️ Campus Map – Mewar University</div>
+    <div class="map-legend">
+      <span class="legend-item"><span class="dot dot-red"></span>Emergency</span>
+      <span class="legend-item"><span class="dot dot-blue"></span>Responder</span>
+      <span class="legend-item"><span class="dot dot-green"></span>Location</span>
+    </div>
+  </div>
+  <div id="campus-map" class="campus-map-container"></div>
+</section>
+
+<!-- TAB: SAFETY -->
+<section id="tab-safety" class="tab-pane">
+  <div class="page-card">
+    <div class="page-title">🛡️ Campus Safety Information</div>
+    <div class="safety-grid">
+      <div class="safety-card safety-medical">
+        <div class="safety-icon">🏥</div>
+        <div class="safety-title">Medical Emergency</div>
+        <ul class="safety-list">
+          <li>Stay calm and call for help immediately</li>
+          <li>Do not move the person unless necessary</li>
+          <li>Check for breathing and pulse</li>
+          <li>Use Rakshak AI to alert the Medical Team</li>
+          <li>Campus Hospital: Near Main Building</li>
+        </ul>
+      </div>
+      <div class="safety-card safety-fire">
+        <div class="safety-icon">🔥</div>
+        <div class="safety-title">Fire Emergency</div>
+        <ul class="safety-list">
+          <li>Alert everyone and evacuate immediately</li>
+          <li>Do not use elevators</li>
+          <li>Close doors to contain fire</li>
+          <li>Use Rakshak AI to alert Fire Response Team</li>
+          <li>Meet at designated assembly points</li>
+        </ul>
+      </div>
+      <div class="safety-card safety-security">
+        <div class="safety-icon">🛡️</div>
+        <div class="safety-title">Security Threat</div>
+        <ul class="safety-list">
+          <li>Do not confront suspicious individuals</li>
+          <li>Move to a safe location</li>
+          <li>Alert security via Rakshak AI</li>
+          <li>Guard Room: Near Main Gate</li>
+          <li>Do not share location with strangers</li>
+        </ul>
+      </div>
+      <div class="safety-card safety-accident">
+        <div class="safety-icon">🚗</div>
+        <div class="safety-title">Accident</div>
+        <ul class="safety-list">
+          <li>Do not move injured persons</li>
+          <li>Keep the area clear</li>
+          <li>Alert campus security immediately</li>
+          <li>Provide first aid only if trained</li>
+          <li>Document details if possible</li>
+        </ul>
+      </div>
+    </div>
+    <div class="emergency-contacts">
+      <div class="contacts-title">📞 Emergency Contacts</div>
+      <div class="contacts-grid">
+        <div class="contact-item"><span class="contact-label">Campus Security</span><span class="contact-val">Guard Room – Main Gate</span></div>
+        <div class="contact-item"><span class="contact-label">Medical Team</span><span class="contact-val">Campus Hospital</span></div>
+        <div class="contact-item"><span class="contact-label">Fire Team</span><span class="contact-val">On Campus – 24/7</span></div>
+        <div class="contact-item"><span class="contact-label">Police</span><span class="contact-val">100</span></div>
+        <div class="contact-item"><span class="contact-label">Ambulance</span><span class="contact-val">108</span></div>
+        <div class="contact-item"><span class="contact-label">Fire Brigade</span><span class="contact-val">101</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- FOOTER -->
+<footer class="footer">
+  🛡️ <strong>Rakshak AI</strong> &nbsp;•&nbsp; AI-assisted campus emergency response &nbsp;•&nbsp; Human responders remain in control
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/main.js"></script>
+</body>
+</html>

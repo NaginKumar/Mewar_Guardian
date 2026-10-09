@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rakshak AI – Security Dashboard</title>
+<meta name="description" content="Security Command Center – Rakshak AI Campus Emergency Response">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/static/css/main.css">
+<link rel="stylesheet" href="/static/css/security.css">
+</head>
+<body class="security-body">
+
+<!-- NOTIFICATION PANEL -->
+<div id="notif-panel" class="notif-panel hidden">
+  <div class="notif-header">
+    <span>🔔 Notifications</span>
+    <button class="notif-close" onclick="toggleNotifPanel()">✕</button>
+  </div>
+  <div id="notif-list" class="notif-list"></div>
+  <button class="btn btn-sm btn-outline" style="margin:8px" onclick="clearNotifications()">Clear All</button>
+</div>
+
+<!-- TOAST -->
+<div id="toast-container"></div>
+
+
+<!-- HEADER -->
+<header class="sec-header">
+  <div class="header-brand">
+    <span class="brand-shield">🛡️</span>
+    <div>
+      <div class="brand-name">Mewar <span class="brand-accent">Guardian</span></div>
+      <div class="brand-sub">Security Command Center</div>
+    </div>
+  </div>
+  <div class="sec-header-center">
+    <div class="system-status">
+      <span class="status-dot"></span>
+      <span id="stream-status">Connecting…</span>
+    </div>
+    <div class="live-clock" id="live-clock"></div>
+  </div>
+  <div class="header-actions">
+    <button id="sound-toggle-btn" class="btn btn-outline-sm" onclick="toggleSound()">🔕 Mute</button>
+    <button class="notif-btn" onclick="toggleNotifPanel()" id="notif-btn">
+      🔔 <span id="notif-badge" class="notif-badge hidden">0</span>
+    </button>
+    <a href="/" class="btn btn-outline-sm">Student View</a>
+    <a href="/security-logout" class="btn btn-outline-sm" style="color:#ef4444; border-color:rgba(239,68,68,0.5);">Logout</a>
+  </div>
+</header>
+
+<!-- CRITICAL ALERT BANNER -->
+<div id="critical-banner" class="critical-banner hidden">
+  <div class="critical-text">🚨 CRITICAL EMERGENCY INCOMING – Check notification panel</div>
+</div>
+
+<div class="sec-tabs">
+  <button class="sec-tab active" onclick="switchSecPage('live')">🚨 Live Emergencies</button>
+  <button class="sec-tab" onclick="switchSecPage('map')">🗺️ Live Tracking</button>
+  <button class="sec-tab" onclick="switchSecPage('analytics')">📊 Analytics</button>
+</div>
+
+<!-- PAGE 1: LIVE EMERGENCIES -->
+<div id="page-live" class="sec-page active">
+  <!-- METRICS ROW -->
+<div class="metrics-row" id="metrics-row">
+  <div class="metric-card metric-total" onclick="filterStatus('All')">
+    <div class="metric-val" id="m-total">–</div>
+    <div class="metric-label">Total</div>
+  </div>
+  <div class="metric-card metric-pending" onclick="filterStatus('Pending')">
+    <div class="metric-val" id="m-pending">–</div>
+    <div class="metric-label">⏳ Pending</div>
+  </div>
+  <div class="metric-card metric-dispatched" onclick="filterStatus('Dispatched')">
+    <div class="metric-val" id="m-dispatched">–</div>
+    <div class="metric-label">🚑 Dispatched</div>
+  </div>
+  <div class="metric-card metric-onway" onclick="filterStatus('On the Way')">
+    <div class="metric-val" id="m-onway">–</div>
+    <div class="metric-label">🚗 On the Way</div>
+  </div>
+  <div class="metric-card metric-arrived" onclick="filterStatus('Arrived')">
+    <div class="metric-val" id="m-arrived">–</div>
+    <div class="metric-label">📍 Arrived</div>
+  </div>
+  <div class="metric-card metric-resolved" onclick="filterStatus('Resolved')">
+    <div class="metric-val" id="m-resolved">–</div>
+    <div class="metric-label">✅ Resolved</div>
+  </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="sec-layout">
+  <!-- LEFT: Emergency List -->
+  <div class="sec-left">
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+      <div class="filter-title">📋 Emergency Reports</div>
+      <div class="filter-tabs" id="filter-tabs">
+        <button class="ftab active" onclick="filterStatus('All')" data-filter="All">All</button>
+        <button class="ftab" onclick="filterStatus('Pending')" data-filter="Pending">Pending</button>
+        <button class="ftab" onclick="filterStatus('Dispatched')" data-filter="Dispatched">Dispatched</button>
+        <button class="ftab" onclick="filterStatus('On the Way')" data-filter="On the Way">On the Way</button>
+        <button class="ftab" onclick="filterStatus('Arrived')" data-filter="Arrived">Arrived</button>
+        <button class="ftab" onclick="filterStatus('Resolved')" data-filter="Resolved">Resolved</button>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="loadEmergencies()">🔄 Refresh</button>
+    </div>
+    <div style="padding: 0 16px 12px 16px;">
+      <input type="text" id="search-input" class="form-input" placeholder="Search by ID, Name, Mobile, Location, Type..." onkeyup="filterBySearch()">
+    </div>
+    <div id="emergency-list" class="emergency-list">
+      <div class="loading-msg">Loading emergencies…</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Detail Panel + Map + Analytics -->
+  <div class="sec-right">
+    <!-- Emergency Detail Card -->
+    <div id="detail-panel" class="detail-panel">
+      <div class="detail-placeholder">
+        <div class="placeholder-icon">🗺️</div>
+        <div class="placeholder-text">Select an emergency to view details and map</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- PAGE: LIVE TRACKING (MAP) -->
+<div id="page-map" class="sec-page" style="display:none; padding: 24px;">
+  <div class="map-card" style="height: calc(100vh - 140px);">
+    <div class="map-card-title">🗺️ Live Campus Tracking</div>
+    <div id="sec-map" class="sec-map-container" style="height: calc(100% - 40px);"></div>
+  </div>
+</div>
+
+<!-- PAGE 2: ANALYTICS -->
+<div id="page-analytics" class="sec-page" style="display:none; padding: 24px;">
+  <div class="analytics-card" style="margin-top: 0;">
+    <div class="analytics-title">📊 Analytics Dashboard</div>
+    <div class="analytics-metrics" id="analytics-metrics">
+      <div class="ana-metric"><div class="ana-val" id="a-dispatch">–</div><div class="ana-label">Avg Dispatch</div></div>
+      <div class="ana-metric"><div class="ana-val" id="a-arrival">–</div><div class="ana-label">Avg Arrival</div></div>
+      <div class="ana-metric"><div class="ana-val" id="a-resolve">–</div><div class="ana-label">Avg Resolve</div></div>
+    </div>
+    <div class="charts-grid">
+      <div>
+        <div class="chart-title">Emergency Types</div>
+        <canvas id="chart-types" height="200"></canvas>
+      </div>
+      <div>
+        <div class="chart-title">Priority Distribution</div>
+        <canvas id="chart-priority" height="200"></canvas>
+      </div>
+      <div>
+        <div class="chart-title">Status Distribution</div>
+        <canvas id="chart-status" height="200"></canvas>
+      </div>
+      <div>
+        <div class="chart-title">Top Locations</div>
+        <canvas id="chart-locations" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/static/js/security.js"></script>
+</body>
+</html>

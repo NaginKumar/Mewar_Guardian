@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: rakshak-ai-backend
+    env: python
+    buildCommand: "pip install -r requirements.txt && pip install gunicorn"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT --workers 3 app:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: MYSQL_HOST
+        sync: false
+      - key: MYSQL_USER
+        sync: false
+      - key: MYSQL_PASS
+        sync: false
+      - key: MYSQL_DB
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
