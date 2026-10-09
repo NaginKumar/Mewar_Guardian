@@ -545,10 +545,14 @@ class ApiService extends ChangeNotifier {
 
   Future<Map<String, dynamic>?> getEmergencyById(int emergencyId) async {
     try {
+      final cleanUrl = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
       final response = await http.get(
-        Uri.parse('$baseUrl/api/emergency/$emergencyId'),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      ).timeout(const Duration(seconds: 6));
+        Uri.parse('$cleanUrl/api/emergency/$emergencyId'),
+        headers: {
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);

@@ -390,3 +390,23 @@
   .sec-layout { grid-template-columns: 1fr; }
   .sec-left { max-height: 50vh; }
 }
+
+.audio-banner {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #1a1a1a;
+  padding: 10px 20px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.35);
+  animation: pulse-banner 2s infinite ease-in-out;
+  position: relative;
+  z-index: 101;
+}
+
+@keyframes pulse-banner {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.92; transform: scale(0.998); }
+}
+

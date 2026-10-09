@@ -528,16 +528,23 @@ def api_update_status(eid):
     if not is_admin_authorized():
         return jsonify({"error": "Unauthorized"}), 401
     body = request.get_json(force=True)
-    status = body.get("status", "")
-    valid = ["Dispatched", "On the Way", "Arrived", "Resolved"]
-    if status not in valid:
-        return jsonify({"error": "Invalid status"}), 400
-    update_status(eid, status)
+    raw_status = str(body.get("status", "")).strip()
+    status_map = {
+        "pending": "Pending",
+        "dispatched": "Dispatched",
+        "on the way": "On the Way",
+        "arrived": "Arrived",
+        "resolved": "Resolved"
+    }
+    canonical = status_map.get(raw_status.lower())
+    if not canonical:
+        return jsonify({"error": f"Invalid status: '{raw_status}'"}), 400
+    update_status(eid, canonical)
     push_sse_event({
-        "type": "status_update", "id": eid, "status": status,
+        "type": "status_update", "id": eid, "status": canonical,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
-    return jsonify({"success": True, "id": eid, "status": status})
+    return jsonify({"success": True, "id": eid, "status": canonical})
 
 # ----------------------------------------------------------
 # API - AUTHENTICATION & STUDENT MANAGEMENT

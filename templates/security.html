@@ -27,6 +27,11 @@
 <div id="toast-container"></div>
 
 
+<!-- AUDIO NOTIFICATION BANNER (shows if audio context requires user interaction) -->
+<div id="audio-enable-banner" class="audio-banner" onclick="unlockAudio()" style="display:none;">
+  <span>🔊 <strong>Live Sound Alert:</strong> Click anywhere on this page to enable the emergency siren!</span>
+</div>
+
 <!-- HEADER -->
 <header class="sec-header">
   <div class="header-brand">
@@ -44,7 +49,9 @@
     <div class="live-clock" id="live-clock"></div>
   </div>
   <div class="header-actions">
-    <button id="sound-toggle-btn" class="btn btn-outline-sm" onclick="toggleSound()">🔕 Mute</button>
+    <button id="silence-alarm-btn" class="btn btn-outline-sm hidden" style="background:#ef4444; color:#fff; border-color:#dc2626; font-weight:800;" onclick="stopSirenAlarm()">🚨 Silence Siren</button>
+    <button id="test-sound-btn" class="btn btn-outline-sm" onclick="testSirenSound()" title="Test emergency siren">🔔 Test Siren</button>
+    <button id="sound-toggle-btn" class="btn btn-outline-sm" onclick="toggleSound()">🔊 Siren ON</button>
     <button class="notif-btn" onclick="toggleNotifPanel()" id="notif-btn">
       🔔 <span id="notif-badge" class="notif-badge hidden">0</span>
     </button>

@@ -36,7 +36,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
   void initState() {
     super.initState();
     _data = Map.from(widget.initialData);
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshStatus());
+    // 3-second rapid polling ensures real-time live synchronization with command center
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _refreshStatus());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshStatus());
   }
 
   @override
@@ -52,8 +54,45 @@ class _TrackingScreenState extends State<TrackingScreen> {
       final update = await api.getEmergencyById(widget.emergencyId);
       if (mounted) {
         if (update != null && update.isNotEmpty) {
+          final oldStatus = _data?['status']?.toString() ?? widget.initialData['status']?.toString() ?? 'Pending';
+          final newStatus = update['status']?.toString() ?? oldStatus;
+
+          if (_currentStageIndex(newStatus) > _currentStageIndex(oldStatus) && mounted) {
+            final stageName = _stages[_currentStageIndex(newStatus)];
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.shield_sharp, color: Colors.white, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Live Update: Security status is now $stageName!",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: AppColors.forestGreen,
+                duration: const Duration(seconds: 4),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+
           setState(() {
-            _data = update;
+            _data = {
+              ...widget.initialData,
+              ...update,
+              if ((update['student_name'] == null || update['student_name'].toString().isEmpty) && widget.initialData['student_name'] != null)
+                'student_name': widget.initialData['student_name'],
+              if ((update['mobile_number'] == null || update['mobile_number'].toString().isEmpty) && widget.initialData['mobile_number'] != null)
+                'mobile_number': widget.initialData['mobile_number'],
+              if ((update['emergency_type'] == null || update['emergency_type'] == 'Confidential Report') && widget.initialData['emergency_type'] != null)
+                'emergency_type': widget.initialData['emergency_type'],
+              if ((update['description'] == null || update['description'].toString().contains('Details hidden')) && widget.initialData['description'] != null)
+                'description': widget.initialData['description'],
+            };
             _isStale = false;
           });
         } else {
@@ -65,9 +104,25 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
-  int _currentStageIndex(String? status) {
-    final idx = _stages.indexOf(status ?? 'Pending');
-    return idx < 0 ? 0 : idx;
+  int _currentStageIndex(String? rawStatus) {
+    if (rawStatus == null || rawStatus.trim().isEmpty) return 0;
+    final s = rawStatus.trim().toLowerCase().replaceAll(RegExp(r'[\s_\-]+'), ' ');
+    if (s.contains('resolve') || s.contains('close') || s.contains('complete')) return 4;
+    if (s.contains('arrive') || s.contains('reach')) return 3;
+    if (s.contains('way') || s.contains('route') || s.contains('transit') || s.contains('progress')) return 2;
+    if (s.contains('dispatch') || s.contains('assigned') || s.contains('accept')) return 1;
+    return 0; // Default to Pending
+  }
+
+  Color _getStatusColor(String? status) {
+    final idx = _currentStageIndex(status);
+    switch (idx) {
+      case 1: return const Color(0xFF2563EB); // Dispatched (Blue)
+      case 2: return AppColors.safetyOrange; // On the Way (Orange)
+      case 3: return const Color(0xFF0D9488); // Arrived (Teal)
+      case 4: return const Color(0xFF16A34A); // Resolved (Green)
+      default: return const Color(0xFFD97706); // Pending (Amber)
+    }
   }
 
   @override
@@ -163,18 +218,34 @@ class _TrackingScreenState extends State<TrackingScreen> {
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.warmIvory),
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: priority == 'CRITICAL'
-                              ? AppColors.criticalRed
-                              : AppColors.safetyOrange,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          priority.toUpperCase(),
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getStatusColor(status),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _stages[stageIdx].toUpperCase(),
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: priority == 'CRITICAL'
+                                  ? AppColors.criticalRed
+                                  : AppColors.safetyOrange,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              priority.toUpperCase(),
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

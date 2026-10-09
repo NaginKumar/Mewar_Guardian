@@ -13,58 +13,180 @@ let eventSource = null;
 let soundEnabled = true;
 let lastSeenEmergencyId = 0;
 let audioCtx = null;
+let sirenLoopTimer = null;
+let activeOscillators = [];
+
+// ============================================================
+// AUDIO & EMERGENCY SIREN SYSTEM
+// ============================================================
+
+function getAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      audioCtx = new AudioContextClass();
+    }
+  }
+  return audioCtx;
+}
+
+function unlockAudio() {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().then(() => {
+      const banner = document.getElementById("audio-enable-banner");
+      if (banner) banner.style.display = "none";
+      const btn = document.getElementById("sound-toggle-btn");
+      if (btn && soundEnabled) btn.innerHTML = "🔊 Siren ON";
+    }).catch(() => {});
+  } else if (ctx && ctx.state === 'running') {
+    const banner = document.getElementById("audio-enable-banner");
+    if (banner) banner.style.display = "none";
+  }
+}
+
+// Global user gesture listeners to automatically unlock Web Audio
+['click', 'keydown', 'touchstart'].forEach(evt => {
+  document.addEventListener(evt, unlockAudio, { passive: true });
+});
+
+function checkAudioUnlocked() {
+  const ctx = getAudioContext();
+  const banner = document.getElementById("audio-enable-banner");
+  if (!banner) return;
+  if (!ctx || ctx.state === 'suspended') {
+    banner.style.display = "block";
+  } else {
+    banner.style.display = "none";
+  }
+}
+
+function playEmergencySiren(durationSeconds = 3.5, isHighAlert = true) {
+  if (!soundEnabled) return;
+  
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    const startTime = ctx.currentTime;
+    const endTime = startTime + durationSeconds;
+
+    // Primary oscillating high-low siren (European ambulance / emergency 960Hz <-> 770Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sawtooth';
+
+    // Secondary sub-harmonic for body and punch (480Hz <-> 385Hz)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'triangle';
+
+    const cycleDuration = 0.35; // 350ms per pitch toggle
+    const numCycles = Math.ceil(durationSeconds / cycleDuration);
+
+    for (let i = 0; i < numCycles; i++) {
+      const t = startTime + (i * cycleDuration);
+      const isHigh = i % 2 === 0;
+      const freq1 = isHigh ? 960 : 770;
+      const freq2 = isHigh ? 480 : 385;
+
+      osc1.frequency.setValueAtTime(freq1, t);
+      osc2.frequency.setValueAtTime(freq2, t);
+    }
+
+    // Volume envelope: smooth attack, loud sustained body, fast fadeout
+    gain1.gain.setValueAtTime(0.001, startTime);
+    gain1.gain.exponentialRampToValueAtTime(0.45, startTime + 0.05);
+    gain1.gain.setValueAtTime(0.45, endTime - 0.1);
+    gain1.gain.exponentialRampToValueAtTime(0.001, endTime);
+
+    gain2.gain.setValueAtTime(0.001, startTime);
+    gain2.gain.exponentialRampToValueAtTime(0.35, startTime + 0.05);
+    gain2.gain.setValueAtTime(0.35, endTime - 0.1);
+    gain2.gain.exponentialRampToValueAtTime(0.001, endTime);
+
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+
+    osc1.start(startTime);
+    osc1.stop(endTime);
+    osc2.start(startTime);
+    osc2.stop(endTime);
+
+    activeOscillators.push(osc1, osc2);
+    setTimeout(() => {
+      activeOscillators = activeOscillators.filter(o => o !== osc1 && o !== osc2);
+    }, durationSeconds * 1000 + 100);
+
+    // Show Silence Alarm button while high-alert is sounding
+    if (isHighAlert) {
+      const silBtn = document.getElementById("silence-alarm-btn");
+      if (silBtn) silBtn.classList.remove("hidden");
+    }
+
+  } catch (err) {
+    console.error("Audio synthesis error:", err);
+  }
+}
 
 function playEmergencyBell() {
-  if (!soundEnabled) return;
+  playEmergencySiren(3.5, true);
+}
+
+function testSirenSound() {
+  unlockAudio();
+  soundEnabled = true;
+  const btn = document.getElementById("sound-toggle-btn");
+  if (btn) btn.innerHTML = "🔊 Siren ON";
+  playEmergencySiren(2.0, false);
+  showToast("🔊 Siren Tested", "Emergency audio alarm is active and working!", "success");
+}
+
+function stopSirenAlarm() {
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!audioCtx) audioCtx = new AudioContext();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'square';
-    
-    osc.frequency.setValueAtTime(880, audioCtx.currentTime); // Beep
-    gain.gain.setValueAtTime(0, audioCtx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05);
-    gain.gain.setValueAtTime(0.5, audioCtx.currentTime + 0.2);
-    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.25);
-    
-    osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.4); // Beep
-    gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.4);
-    gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.45);
-    gain.gain.setValueAtTime(0.5, audioCtx.currentTime + 0.6);
-    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.65);
-    
-    osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.8); // Beep
-    gain.gain.setValueAtTime(0, audioCtx.currentTime + 0.8);
-    gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.85);
-    gain.gain.setValueAtTime(0.5, audioCtx.currentTime + 1.0);
-    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1.05);
-    
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 1.1);
-  } catch (e) {
-    console.error("Audio API error:", e);
-  }
+    if (sirenLoopTimer) {
+      clearInterval(sirenLoopTimer);
+      sirenLoopTimer = null;
+    }
+    const ctx = getAudioContext();
+    if (ctx) {
+      activeOscillators.forEach(osc => {
+        try { osc.stop(); } catch (_) {}
+      });
+      activeOscillators = [];
+    }
+  } catch (_) {}
+
+  const silBtn = document.getElementById("silence-alarm-btn");
+  if (silBtn) silBtn.classList.add("hidden");
+  showToast("🔕 Siren Silenced", "Emergency alarm sound silenced by security.", "info");
 }
 
 function toggleSound() {
   soundEnabled = !soundEnabled;
   const btn = document.getElementById("sound-toggle-btn");
-  if (btn) btn.innerHTML = soundEnabled ? "🔊 Alert Sound ON" : "🔇 Alert Sound OFF";
+  if (btn) {
+    btn.innerHTML = soundEnabled ? "🔊 Siren ON" : "🔇 Siren OFF";
+  }
   
   if (soundEnabled) {
-    try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!audioCtx) audioCtx = new AudioContext();
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-    } catch(e) {}
+    unlockAudio();
+    showToast("🔊 Sound Active", "Emergency audible alerts enabled.", "info");
+  } else {
+    stopSirenAlarm();
+    showToast("🔇 Sound Muted", "Emergency alerts muted.", "info");
   }
 }
+
+// ============================================================
+// INITIALIZATION & REAL-TIME EVENT STREAM
+// ============================================================
 
 document.addEventListener("DOMContentLoaded", () => {
   initClock();
@@ -72,8 +194,9 @@ document.addEventListener("DOMContentLoaded", () => {
   loadEmergencies();
   loadAnalytics();
   initMap();
-  setInterval(loadEmergencies, 4000); // 4-second polling ensures multi-worker reliability
+  setInterval(loadEmergencies, 3500); // 3.5s polling guarantees cross-worker reliability
   setInterval(loadAnalytics, 30000);
+  setInterval(checkAudioUnlocked, 5000);
   requestNotifPermission();
 });
 
@@ -90,7 +213,6 @@ function switchSecPage(pageId) {
   }
 
   document.querySelectorAll(".sec-tab").forEach(tab => {
-    // Exact match or includes is tricky, let's use exact data-id if possible, but includes works for now
     tab.classList.toggle("active", tab.textContent.toLowerCase().includes(pageId));
   });
 }
@@ -111,7 +233,7 @@ function initSSE() {
 
   eventSource.onopen = () => {
     const el = document.getElementById("stream-status");
-    if (el) { el.textContent = "Live \u2022 Real-time"; el.style.color = "#86efac"; }
+    if (el) { el.textContent = "Live • Real-time"; el.style.color = "#86efac"; }
   };
 
   eventSource.onmessage = (e) => {
@@ -127,37 +249,42 @@ function initSSE() {
 
   eventSource.onerror = () => {
     const el = document.getElementById("stream-status");
-    if (el) { el.textContent = "Reconnecting..."; el.style.color = "#fbbf24"; }
-    setTimeout(initSSE, 5000);
+    if (el) { el.textContent = "Live Polling • Active"; el.style.color = "#fbbf24"; }
+    setTimeout(initSSE, 6000);
   };
 }
 
-function handleNewEmergency(data) {
-  if (data.id > lastSeenEmergencyId) {
-    lastSeenEmergencyId = data.id;
-  } else {
-    return; // Ignore if we've already seen it or it's an old emergency
+function handleNewEmergency(data, skipReload = false) {
+  const eid = parseInt(data.id, 10);
+  if (!eid) return;
+
+  if (eid > lastSeenEmergencyId) {
+    lastSeenEmergencyId = eid;
   }
 
   addNotification(data);
-  loadEmergencies();
-  loadAnalytics();
+  if (!skipReload) {
+    loadEmergencies();
+    loadAnalytics();
+  }
 
-  if (data.priority === "CRITICAL" || data.priority === "HIGH") {
+  const isCritical = (data.priority === "CRITICAL" || data.priority === "HIGH");
+
+  if (isCritical) {
     const banner = document.getElementById("critical-banner");
     if (banner) {
       banner.classList.remove("hidden");
-      setTimeout(() => banner.classList.add("hidden"), 8000);
+      setTimeout(() => banner.classList.add("hidden"), 10000);
     }
-    showToast("\ud83d\udea8 NEW EMERGENCY", data.emergency_type + " at " + data.location, "critical");
-    sendBrowserNotif("\ud83d\udea8 " + data.emergency_type + " - " + data.priority, data.location);
+    showToast("🚨 EMERGENCY SOS ALERT", `${data.emergency_type} at ${data.location}`, "critical");
+    sendBrowserNotif(`🚨 ${data.emergency_type} - ${data.priority}`, data.location);
     if (soundEnabled) {
-      playEmergencyBell();
+      playEmergencySiren(4.0, true);
     }
   } else {
-    showToast("\ud83d\udd14 New Emergency", data.emergency_type + " at " + data.location, "info");
+    showToast("🔔 New Emergency Report", `${data.emergency_type} at ${data.location}`, "info");
     if (soundEnabled) {
-      playEmergencyBell();
+      playEmergencySiren(2.5, false);
     }
   }
 }
@@ -165,20 +292,55 @@ function handleNewEmergency(data) {
 function handleStatusUpdate(data) {
   loadEmergencies();
   if (selectedEmgId === data.id) {
-    setTimeout(() => selectEmergency(data.id), 500);
+    setTimeout(() => selectEmergency(data.id), 300);
   }
 }
 
-// EMERGENCIES
+// ============================================================
+// EMERGENCIES POLLING & STATE
+// ============================================================
+
 function loadEmergencies() {
-  fetch("/api/emergencies").then(r => r.json()).then(d => {
-    allEmergencies = d.emergencies || [];
-    if (allEmergencies.length > 0 && lastSeenEmergencyId === 0) {
-      lastSeenEmergencyId = Math.max(...allEmergencies.map(e => e.id));
+  fetch("/api/emergencies", {
+    headers: { "X-Admin-Password": "admin123" },
+    credentials: "include"
+  })
+  .then(r => r.json())
+  .then(d => {
+    const list = d.emergencies || [];
+    if (!Array.isArray(list)) return;
+
+    if (lastSeenEmergencyId === 0) {
+      // First boot / initial page load: record highest ID
+      if (list.length > 0) {
+        lastSeenEmergencyId = Math.max(...list.map(e => e.id));
+      }
+    } else {
+      // Subsequent polling cycles: detect any newly submitted emergencies across workers!
+      const newItems = list.filter(e => e.id > lastSeenEmergencyId).sort((a, b) => a.id - b.id);
+      for (const item of newItems) {
+        handleNewEmergency(item, true);
+      }
+      if (list.length > 0) {
+        lastSeenEmergencyId = Math.max(lastSeenEmergencyId, ...list.map(e => e.id));
+      }
     }
+
+    allEmergencies = list;
     updateMetrics();
     renderList();
-  }).catch(() => {});
+
+    // If an emergency is currently open in detail panel, keep it updated
+    if (selectedEmgId) {
+      const current = allEmergencies.find(e => e.id === selectedEmgId);
+      if (current) {
+        renderDetail(current);
+      }
+    }
+  })
+  .catch(err => {
+    console.warn("Poll emergencies notice:", err);
+  });
 }
 
 function updateMetrics() {
@@ -404,18 +566,31 @@ function renderDetail(e) {
 
 function updateStatus(eid, status) {
   fetch(`/api/emergency/${eid}/status`, {
-    method: "POST", headers: {"Content-Type":"application/json"},
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Password": "admin123"
+    },
+    credentials: "include",
     body: JSON.stringify({ status })
   })
   .then(r => r.json())
   .then(d => {
     if (d.success) {
-      showToast("\u2705 Updated", "Emergency #" + eid + " \u2192 " + status, "success");
+      showToast("✅ Status Updated", `Incident #${eid} updated to ${status}`, "success");
+      if (status === "Resolved") {
+        stopSirenAlarm();
+      }
       loadEmergencies();
-      setTimeout(() => selectEmergency(eid), 400);
+      setTimeout(() => selectEmergency(eid), 250);
+    } else {
+      showToast("❌ Update Failed", d.error || "Could not update status.", "critical");
     }
   })
-  .catch(() => showToast("\u274c Failed", "Could not update status.", "critical"));
+  .catch(err => {
+    console.error("Status update error:", err);
+    showToast("❌ Update Failed", "Network or server error updating status.", "critical");
+  });
 }
 
 // MAP
