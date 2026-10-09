@@ -72,8 +72,8 @@ document.addEventListener("DOMContentLoaded", () => {
   loadEmergencies();
   loadAnalytics();
   initMap();
-  setInterval(loadEmergencies, 30000);
-  setInterval(loadAnalytics, 60000);
+  setInterval(loadEmergencies, 4000); // 4-second polling ensures multi-worker reliability
+  setInterval(loadAnalytics, 30000);
   requestNotifPermission();
 });
 

@@ -6,6 +6,7 @@
 import os, json, math, time, threading
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect, url_for
+from flask_cors import CORS
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -24,7 +25,29 @@ from database.db import (
 )
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.secret_key = os.urandom(24)
+app.secret_key = os.getenv("SECRET_KEY", "mewar-guardian-production-secret-2026-secure")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+
+CORS(
+    app,
+    supports_credentials=True,
+    origins=["https://mewar-guardian.onrender.com", "http://localhost:3000", "http://localhost:5000", "http://127.0.0.1:5000", "*"]
+)
+
+def is_admin_authorized():
+    if session.get('sec_logged_in'):
+        return True
+    auth_header = request.headers.get("Authorization", "")
+    admin_header = request.headers.get("X-Admin-Password", "")
+    expected = os.getenv("SECURITY_PASS", "admin123")
+    if admin_header and admin_header == expected:
+        return True
+    if auth_header.startswith("Bearer ") and auth_header[7:].strip() == expected:
+        return True
+    return False
 
 _sse_clients = []
 _sse_lock = threading.Lock()
@@ -422,7 +445,7 @@ def api_create_emergency():
 
 @app.route("/api/emergencies", methods=["GET"])
 def api_get_emergencies():
-    if not session.get('sec_logged_in'):
+    if not is_admin_authorized():
         return jsonify({"error": "Unauthorized"}), 401
         
     df = get_emergencies()
@@ -438,8 +461,27 @@ def api_get_emergencies():
         else:
             time_str = str(t)
             
+        row_id = row.get("id")
+        try:
+            eid_val = int(row_id)
+        except (ValueError, TypeError):
+            continue
+
+        def _safe_float(v):
+            try:
+                val = float(v)
+                return val if not math.isnan(val) else None
+            except (ValueError, TypeError):
+                return None
+
+        def _safe_int(v):
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return None
+
         emergencies.append({
-            "id": int(row["id"]) if str(row.get("id", "")) != "" else None,
+            "id": eid_val,
             "student_name": str(row.get("student_name", "")),
             "mobile_number": str(row.get("mobile_number", "")),
             "enrollment_number": str(row.get("enrollment_number", "")),
@@ -450,14 +492,14 @@ def api_get_emergencies():
             "status": str(row.get("status", "")),
             "time": time_str,
             "responder": str(row.get("responder", "")),
-            "distance": float(row["distance"]) if str(row.get("distance", "")) != "" else None,
-            "estimated_minutes": int(row["estimated_minutes"]) if str(row.get("estimated_minutes", "")) != "" else None,
-            "ai_confidence": float(row["ai_confidence"]) if str(row.get("ai_confidence", "")) != "" else None,
-            "risk_score": int(row["risk_score"]) if str(row.get("risk_score", "")) != "" else None,
+            "distance": _safe_float(row.get("distance")),
+            "estimated_minutes": _safe_int(row.get("estimated_minutes")),
+            "ai_confidence": _safe_float(row.get("ai_confidence")),
+            "risk_score": _safe_int(row.get("risk_score")),
             "recommendation": str(row.get("recommendation", "")),
-            "incident_lat": float(row["student_lat"]) if str(row.get("student_lat", "")) != "" else None,
-            "incident_lon": float(row["student_lon"]) if str(row.get("student_lon", "")) != "" else None,
-            "location_accuracy": float(row["location_accuracy"]) if str(row.get("location_accuracy", "")) != "" else None,
+            "incident_lat": _safe_float(row.get("student_lat")),
+            "incident_lon": _safe_float(row.get("student_lon")),
+            "location_accuracy": _safe_float(row.get("location_accuracy")),
         })
     return jsonify({"emergencies": emergencies})
 
@@ -468,7 +510,7 @@ def api_get_emergency(eid):
         return jsonify({"error": "Not found"}), 404
         
     # Mask PII if not logged in as security
-    if not session.get('sec_logged_in'):
+    if not is_admin_authorized():
         row.pop("student_name", None)
         row.pop("mobile_number", None)
         row.pop("enrollment_number", None)
@@ -483,7 +525,7 @@ def api_get_emergency(eid):
 
 @app.route("/api/emergency/<int:eid>/status", methods=["POST"])
 def api_update_status(eid):
-    if not session.get('sec_logged_in'):
+    if not is_admin_authorized():
         return jsonify({"error": "Unauthorized"}), 401
     body = request.get_json(force=True)
     status = body.get("status", "")

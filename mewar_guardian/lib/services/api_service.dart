@@ -8,15 +8,15 @@ import '../config/campus_locations_data.dart';
 import '../models/campus_location.dart';
 
 class ApiService extends ChangeNotifier {
-  // Configurable Base URL candidates
-  // 1. http://127.0.0.1:5000 (Default via ADB reverse port forwarding over USB)
-  // 2. http://10.168.143.130:5000 (Local WiFi LAN IP)
-  // 3. https://upturned-wispy-comply.ngrok-free.dev (Remote Ngrok tunnel)
+  // Production URL (Deployed on Render)
+  static const String productionUrl  = "https://mewar-guardian.onrender.com";
+
+  // Development URLs
   static const String defaultLocalUrl = "http://127.0.0.1:5000";
   static const String defaultLanUrl   = "http://10.168.143.130:5000";
   static const String defaultNgrokUrl = "https://upturned-wispy-comply.ngrok-free.dev";
 
-  String baseUrl = defaultLocalUrl;
+  String baseUrl = productionUrl;
   bool isConnected = false;
   String studentName = "";
   String mobileNumber = "";
@@ -50,10 +50,17 @@ class ApiService extends ChangeNotifier {
       isLoggedIn = false;
     }
     
-    // Load custom baseUrl if saved
+    // Load custom baseUrl if saved (strictly enforce production in release builds)
     final savedUrl = prefs.getString('custom_base_url');
     if (savedUrl != null && savedUrl.isNotEmpty) {
-      baseUrl = savedUrl;
+      if (kReleaseMode && (savedUrl.contains('127.0.0.1') || savedUrl.contains('localhost') || savedUrl.contains('10.0.2.2'))) {
+        baseUrl = productionUrl;
+        await prefs.setString('custom_base_url', productionUrl);
+      } else {
+        baseUrl = savedUrl;
+      }
+    } else {
+      baseUrl = productionUrl;
     }
     notifyListeners();
   }
@@ -330,7 +337,14 @@ class ApiService extends ChangeNotifier {
   }
 
   Future<void> setBaseUrl(String newUrl) async {
-    baseUrl = newUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final clean = newUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    if (clean.isEmpty || clean.toLowerCase() == 'default') {
+      baseUrl = productionUrl;
+    } else if (kReleaseMode && (clean.contains('127.0.0.1') || clean.contains('localhost') || clean.contains('10.0.2.2'))) {
+      baseUrl = productionUrl;
+    } else {
+      baseUrl = clean;
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('custom_base_url', baseUrl);
     await checkBackendHealth();
@@ -342,7 +356,7 @@ class ApiService extends ChangeNotifier {
       final response = await http.get(
         Uri.parse('$baseUrl/api/health'),
         headers: {'ngrok-skip-browser-warning': 'true'},
-      ).timeout(const Duration(seconds: 3));
+      ).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         isConnected = true;
@@ -351,8 +365,8 @@ class ApiService extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Fallback probe to LAN or ADB if primary is down
-    if (baseUrl == defaultLocalUrl) {
+    // Only probe local LAN in debug mode if explicitly targeting local dev
+    if (!kReleaseMode && baseUrl == defaultLocalUrl) {
       try {
         final r = await http.get(
           Uri.parse('$defaultLanUrl/api/health'),
@@ -408,60 +422,76 @@ class ApiService extends ChangeNotifier {
     return _cachedLocations;
   }
 
+  bool _isSubmittingEmergency = false;
+
   /// Submits an emergency report with idempotency, validation, and offline queue.
   Future<Map<String, dynamic>> submitEmergency(Map<String, dynamic> data) async {
-    // Enrich with authenticated student identity and idempotency key
-    data['student_name'] = data['student_name'] ?? studentName;
-    data['mobile_number'] = data['mobile_number'] ?? mobileNumber;
-    data['enrollment_number'] = data['enrollment_number'] ?? enrollmentNumber;
-    data['timestamp'] = DateTime.now().toIso8601String();
-    data['client_request_id'] = "${DateTime.now().millisecondsSinceEpoch}_${studentName.hashCode}";
-
-    // Check device connectivity
-    try {
-      final connectivityResult = await (Connectivity().checkConnectivity());
-      if (connectivityResult.contains(ConnectivityResult.none) && !connectivityResult.any((r) => r != ConnectivityResult.none)) {
-        return await _queueOffline(data, "Device is offline. Report stored locally in emergency queue.");
-      }
-    } catch (_) {}
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/emergency'),
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: jsonEncode(data),
-      ).timeout(const Duration(seconds: 10));
-
-      isConnected = true;
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final body = jsonDecode(response.body);
-        if (body is Map<String, dynamic> && (body['success'] == true || body.containsKey('emergency_id'))) {
-          // Trigger background sync of any previously queued reports
-          unawaited(syncOfflineEmergencies());
-          return body;
-        }
-      }
-
-      if (response.statusCode == 400 || response.statusCode == 422) {
-        final body = jsonDecode(response.body);
-        return {
-          "error": body['error'] ?? "Invalid emergency report data.",
-          "error_type": "validation",
-        };
-      }
-
+    if (_isSubmittingEmergency) {
       return {
-        "error": "Server returned status code ${response.statusCode}.",
-        "error_type": "server_error",
+        "error": "Emergency transmission already in progress. Please wait a moment.",
+        "error_type": "in_progress",
       };
-    } catch (e) {
-      if (kDebugMode) print('submitEmergency network exception: $e');
-      isConnected = false;
-      return await _queueOffline(data, "Cannot reach backend. Report saved locally in offline emergency queue.");
+    }
+    _isSubmittingEmergency = true;
+
+    try {
+      // Enrich with authenticated student identity and idempotency key
+      data['student_name'] = data['student_name'] ?? studentName;
+      data['mobile_number'] = data['mobile_number'] ?? mobileNumber;
+      data['enrollment_number'] = data['enrollment_number'] ?? enrollmentNumber;
+      data['timestamp'] = DateTime.now().toIso8601String();
+      data['client_request_id'] = "${DateTime.now().millisecondsSinceEpoch}_${studentName.hashCode}";
+
+      // Check device connectivity
+      try {
+        final connectivityResult = await (Connectivity().checkConnectivity());
+        if (connectivityResult.contains(ConnectivityResult.none) && !connectivityResult.any((r) => r != ConnectivityResult.none)) {
+          return await _queueOffline(data, "Device is offline. Report stored locally in emergency queue.");
+        }
+      } catch (_) {}
+
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/api/emergency'),
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: jsonEncode(data),
+        ).timeout(const Duration(seconds: 12));
+
+        isConnected = true;
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final body = jsonDecode(response.body);
+          if (body is Map<String, dynamic> && (body['success'] == true || body.containsKey('emergency_id'))) {
+            // Trigger background sync of any previously queued reports
+            unawaited(syncOfflineEmergencies());
+            return body;
+          }
+        }
+
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body.containsKey('error')) {
+            return {
+              "error": body['error'] ?? "Server error occurred.",
+              "error_type": "server_rejected",
+            };
+          }
+        } catch (_) {}
+
+        return {
+          "error": "Server returned status code ${response.statusCode}.",
+          "error_type": "server_error",
+        };
+      } catch (e) {
+        if (kDebugMode) print('submitEmergency network exception: $e');
+        isConnected = false;
+        return await _queueOffline(data, "Cannot reach safety server ($baseUrl). Report saved locally in offline queue.");
+      }
+    } finally {
+      _isSubmittingEmergency = false;
     }
   }
 

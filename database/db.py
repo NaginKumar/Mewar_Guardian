@@ -1,4 +1,5 @@
 import pymysql
+import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
 import os
@@ -10,15 +11,101 @@ DB_HOST = os.getenv("MYSQL_HOST", "localhost")
 DB_USER = os.getenv("MYSQL_USER", "root")
 DB_PASS = os.getenv("MYSQL_PASS", "daksh@706079nagin")
 DB_NAME = os.getenv("MYSQL_DB", "rakshak_ai")
+DB_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+
+SQLITE_PATH = os.getenv(
+    "SQLITE_PATH",
+    "/var/data/emergencies.db" if os.path.exists("/var/data") else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "emergencies.db"))
+)
+
+class SQLiteCursorWrapper:
+    def __init__(self, cursor):
+        self._cur = cursor
+
+    def execute(self, sql, params=None):
+        sqlite_sql = sql.replace('%s', '?')
+        if params is None:
+            return self._cur.execute(sqlite_sql)
+        if not isinstance(params, (tuple, list)):
+            params = (params,)
+        return self._cur.execute(sqlite_sql, params)
+
+    def executemany(self, sql, seq_of_params):
+        sqlite_sql = sql.replace('%s', '?')
+        return self._cur.executemany(sqlite_sql, seq_of_params)
+
+    def fetchone(self):
+        r = self._cur.fetchone()
+        return dict(r) if r is not None else None
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        return [dict(r) for r in rows] if rows else []
+
+    @property
+    def lastrowid(self):
+        return self._cur.lastrowid
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+class SQLiteConnWrapper:
+    def __init__(self, conn):
+        self._conn = conn
+        self.is_sqlite = True
+
+    def cursor(self, *args, **kwargs):
+        return SQLiteCursorWrapper(self._conn.cursor())
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 def get_connection(include_db=True):
+    """
+    Connect to MySQL if configured and reachable;
+    fallback smoothly to SQLite (emergencies.db) if MySQL is unavailable or unconfigured.
+    """
+    force_sqlite = os.getenv("USE_SQLITE", "false").lower() in ("true", "1", "yes")
+    if DB_HOST and not force_sqlite:
+        try:
+            if include_db:
+                conn = pymysql.connect(
+                    host=DB_HOST,
+                    user=DB_USER,
+                    password=DB_PASS,
+                    database=DB_NAME,
+                    port=DB_PORT,
+                    connect_timeout=3,
+                    cursorclass=pymysql.cursors.DictCursor
+                )
+            else:
+                conn = pymysql.connect(
+                    host=DB_HOST,
+                    user=DB_USER,
+                    password=DB_PASS,
+                    port=DB_PORT,
+                    connect_timeout=3,
+                    cursorclass=pymysql.cursors.DictCursor
+                )
+            conn.is_sqlite = False
+            return conn
+        except Exception as e:
+            print(f"[Database Notice] MySQL ({DB_HOST}) connection failed: {e}. Using SQLite fallback.")
+
+    # Guaranteed fallback to SQLite
     try:
-        if include_db:
-            return pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASS, database=DB_NAME)
-        else:
-            return pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASS)
+        os.makedirs(os.path.dirname(SQLITE_PATH), exist_ok=True)
+        raw_conn = sqlite3.connect(SQLITE_PATH, timeout=30.0, check_same_thread=False)
+        raw_conn.row_factory = sqlite3.Row
+        return SQLiteConnWrapper(raw_conn)
     except Exception as e:
-        print(f"[MySQL Error] Could not connect: {e}")
+        print(f"[SQLite Error] Could not connect to SQLite at {SQLITE_PATH}: {e}")
         return None
 
 # =========================================================
@@ -27,47 +114,82 @@ def get_connection(include_db=True):
 
 def create_database():
     """Create the emergencies table if it does not already exist."""
-    conn = get_connection(include_db=False)
-    if not conn: return
-    cursor = conn.cursor()
-    cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
-    conn.commit()
-    conn.close()
-
     conn = get_connection(include_db=True)
     if not conn: return
     cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS emergencies (
-            id                INTEGER PRIMARY KEY AUTO_INCREMENT,
-            student_name      TEXT,
-            mobile_number     TEXT,
-            enrollment_number TEXT,
-            emergency_type    TEXT,
-            location          TEXT,
-            description       TEXT,
-            priority          TEXT,
-            time              TEXT,
-            reported_time     TEXT,
-            status            TEXT,
-            responder         TEXT,
-            distance          REAL,
-            dispatch_time     TEXT,
-            arrived_time      TEXT,
-            resolved_time     TEXT,
-            on_way_time       TEXT,
-            ai_confidence     REAL,
-            risk_score        INTEGER,
-            recommendation    TEXT,
-            estimated_minutes INTEGER,
-            student_lat       REAL,
-            student_lon       REAL,
-            location_accuracy REAL,
-            responder_lat     REAL,
-            responder_lon     REAL
-        )
-    """)
+    if getattr(conn, 'is_sqlite', False):
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS emergencies (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_name      TEXT,
+                mobile_number     TEXT,
+                enrollment_number TEXT,
+                emergency_type    TEXT,
+                location          TEXT,
+                description       TEXT,
+                priority          TEXT,
+                time              TEXT,
+                reported_time     TEXT,
+                status            TEXT,
+                responder         TEXT,
+                distance          REAL,
+                dispatch_time     TEXT,
+                arrived_time      TEXT,
+                resolved_time     TEXT,
+                on_way_time       TEXT,
+                ai_confidence     REAL,
+                risk_score        INTEGER,
+                recommendation    TEXT,
+                estimated_minutes INTEGER,
+                student_lat       REAL,
+                student_lon       REAL,
+                location_accuracy REAL,
+                responder_lat     REAL,
+                responder_lon     REAL
+            )
+        """)
+    else:
+        try:
+            conn_admin = get_connection(include_db=False)
+            if conn_admin:
+                c = conn_admin.cursor()
+                c.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
+                conn_admin.commit()
+                conn_admin.close()
+        except Exception:
+            pass
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS emergencies (
+                id                INTEGER PRIMARY KEY AUTO_INCREMENT,
+                student_name      TEXT,
+                mobile_number     TEXT,
+                enrollment_number TEXT,
+                emergency_type    TEXT,
+                location          TEXT,
+                description       TEXT,
+                priority          TEXT,
+                time              TEXT,
+                reported_time     TEXT,
+                status            TEXT,
+                responder         TEXT,
+                distance          REAL,
+                dispatch_time     TEXT,
+                arrived_time      TEXT,
+                resolved_time     TEXT,
+                on_way_time       TEXT,
+                ai_confidence     REAL,
+                risk_score        INTEGER,
+                recommendation    TEXT,
+                estimated_minutes INTEGER,
+                student_lat       REAL,
+                student_lon       REAL,
+                location_accuracy REAL,
+                responder_lat     REAL,
+                responder_lon     REAL
+            )
+        """)
 
     conn.commit()
     conn.close()
@@ -99,23 +221,44 @@ def create_password_resets_table():
     conn = get_connection(include_db=True)
     if not conn: return
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS password_resets (
-            id                INTEGER PRIMARY KEY AUTO_INCREMENT,
-            enrollment_number VARCHAR(100) NOT NULL,
-            mobile_number     VARCHAR(20) NOT NULL,
-            otp_hash          VARCHAR(255) NOT NULL,
-            otp_expires_at    DATETIME NOT NULL,
-            otp_attempts      INTEGER DEFAULT 0,
-            is_verified       BOOLEAN DEFAULT FALSE,
-            reset_token       VARCHAR(255) NULL,
-            token_expires_at  DATETIME NULL,
-            is_used           BOOLEAN DEFAULT FALSE,
-            created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_enrollment (enrollment_number),
-            INDEX idx_reset_token (reset_token)
-        )
-    """)
+
+    if getattr(conn, 'is_sqlite', False):
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                enrollment_number VARCHAR(100) NOT NULL,
+                mobile_number     VARCHAR(20) NOT NULL,
+                otp_hash          VARCHAR(255) NOT NULL,
+                otp_expires_at    DATETIME NOT NULL,
+                otp_attempts      INTEGER DEFAULT 0,
+                is_verified       BOOLEAN DEFAULT 0,
+                reset_token       VARCHAR(255) NULL,
+                token_expires_at  DATETIME NULL,
+                is_used           BOOLEAN DEFAULT 0,
+                created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pw_enrollment ON password_resets (enrollment_number)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_pw_reset_token ON password_resets (reset_token)")
+    else:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS password_resets (
+                id                INTEGER PRIMARY KEY AUTO_INCREMENT,
+                enrollment_number VARCHAR(100) NOT NULL,
+                mobile_number     VARCHAR(20) NOT NULL,
+                otp_hash          VARCHAR(255) NOT NULL,
+                otp_expires_at    DATETIME NOT NULL,
+                otp_attempts      INTEGER DEFAULT 0,
+                is_verified       BOOLEAN DEFAULT FALSE,
+                reset_token       VARCHAR(255) NULL,
+                token_expires_at  DATETIME NULL,
+                is_used           BOOLEAN DEFAULT FALSE,
+                created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_enrollment (enrollment_number),
+                INDEX idx_reset_token (reset_token)
+            )
+        """)
+
     conn.commit()
     conn.close()
 
@@ -124,11 +267,15 @@ def add_missing_columns():
     """Safely add any columns that may be missing from older database files."""
     conn = get_connection()
     if not conn: return
-    cursor = conn.cursor(pymysql.cursors.DictCursor)
+    cursor = conn.cursor()
 
-    # 1. Update emergencies columns
-    cursor.execute("SHOW COLUMNS FROM emergencies")
-    columns = [row['Field'] for row in cursor.fetchall()]
+    is_sqlite = getattr(conn, 'is_sqlite', False)
+    if is_sqlite:
+        cursor.execute("PRAGMA table_info(emergencies)")
+        columns = [row['name'] for row in cursor.fetchall()]
+    else:
+        cursor.execute("SHOW COLUMNS FROM emergencies")
+        columns = [row['Field'] for row in cursor.fetchall()]
 
     new_columns = {
         "mobile_number":     "TEXT",
@@ -158,14 +305,19 @@ def add_missing_columns():
 
     # 2. Update students columns
     try:
-        cursor.execute("SHOW COLUMNS FROM students")
-        student_cols = [row['Field'] for row in cursor.fetchall()]
+        if is_sqlite:
+            cursor.execute("PRAGMA table_info(students)")
+            student_cols = [row['name'] for row in cursor.fetchall()]
+        else:
+            cursor.execute("SHOW COLUMNS FROM students")
+            student_cols = [row['Field'] for row in cursor.fetchall()]
+
         if "password_hash" not in student_cols:
             cursor.execute("ALTER TABLE students ADD COLUMN password_hash VARCHAR(255)")
         if "role" not in student_cols:
             cursor.execute("ALTER TABLE students ADD COLUMN role VARCHAR(50) DEFAULT 'Student'")
     except Exception as e:
-        print(f"[MySQL students column migration] {e}")
+        print(f"[students column migration] {e}")
 
     conn.commit()
     conn.close()
@@ -223,20 +375,27 @@ def add_emergency(
 
 
 def save_student_profile(enrollment: str, name: str, mobile: str) -> bool:
-    """Upsert student profile into the students table in MySQL."""
+    """Upsert student profile into the students table."""
     conn = get_connection()
     if not conn: return False
     cursor = conn.cursor()
     try:
-        cursor.execute("""
-            INSERT INTO students (enrollment_number, student_name, mobile_number)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE student_name=%s, mobile_number=%s
-        """, (enrollment, name, mobile, name, mobile))
+        if getattr(conn, 'is_sqlite', False):
+            cursor.execute("""
+                INSERT INTO students (enrollment_number, student_name, mobile_number)
+                VALUES (%s, %s, %s)
+                ON CONFLICT(enrollment_number) DO UPDATE SET student_name=excluded.student_name, mobile_number=excluded.mobile_number
+            """, (enrollment, name, mobile))
+        else:
+            cursor.execute("""
+                INSERT INTO students (enrollment_number, student_name, mobile_number)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE student_name=%s, mobile_number=%s
+            """, (enrollment, name, mobile, name, mobile))
         conn.commit()
         return True
     except Exception as e:
-        print(f"[MySQL] Error saving student: {e}")
+        print(f"[Save Student Profile Error] {e}")
         return False
     finally:
         conn.close()
@@ -603,12 +762,13 @@ def get_emergencies() -> pd.DataFrame:
     """Return all emergency records ordered newest-first."""
     conn = get_connection()
     if not conn: return pd.DataFrame()
-    data = pd.read_sql_query(
-        "SELECT * FROM emergencies ORDER BY id DESC",
-        conn
-    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM emergencies ORDER BY id DESC")
+    rows = cursor.fetchall()
     conn.close()
-    return data
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
 
 
 def update_status(emergency_id: int, status: str):
