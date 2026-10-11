@@ -105,14 +105,17 @@ def test_chat_and_emergency_with_photo(photo_url):
     assert chat_data.get("attached_photo") == photo_url, "Attached photo not reflected in response"
 
     # 2. Create emergency with photo
+    import uuid
+    uid_photo = uuid.uuid4().hex[:8]
     emergency_payload = {
         "student_name": "Aarav Sharma",
         "mobile_number": "9000000001",
         "enrollment_number": "MUR2500001",
         "emergency_type": "Medical Emergency",
-        "description": "Student feeling dizzy outside Admin Block with photo proof.",
+        "description": f"Student feeling dizzy outside Admin Block with photo proof [{uid_photo}].",
         "location": "Admin Block",
         "photo_url": photo_url,
+        "client_request_id": f"req_photo_{uid_photo}",
     }
     res_emg = requests.post(f"{BASE_URL}/api/emergency", json=emergency_payload, timeout=10)
     assert res_emg.status_code in [200, 201], f"Emergency creation failed: {res_emg.text}"
@@ -129,11 +132,67 @@ def test_chat_and_emergency_with_photo(photo_url):
     print(f"Admin fetch emergency #{emg_id} photo_url: {fetched_data.get('photo_url')}")
     print(">> Chat and Emergency photo persistence PASSED.\n")
 
+def test_video_upload_and_serving():
+    print("==================================================")
+    print("5. TESTING VIDEO UPLOAD AND STREAMING (/api/upload)")
+    print("==================================================")
+
+    # 1. Valid MP4 upload
+    dummy_mp4 = b"\x00\x00\x00 ftypisom\x00\x00\x02\x00isomiso2mp41\x00\x00\x00\x08free\x00\x00\x00\x18mdatMewarGuardianVideoData"
+    files = {"video": ("incident_footage.mp4", dummy_mp4, "video/mp4")}
+    res = requests.post(f"{BASE_URL}/api/upload", files=files, timeout=10)
+    assert res.status_code == 200, f"Video upload returned {res.status_code}: {res.text}"
+    upload_data = res.json()
+    assert upload_data.get("success") is True, f"Video upload failed: {upload_data}"
+    video_url = upload_data.get("video_url")
+    assert video_url is not None and video_url.startswith("/api/uploads/") and video_url.endswith(".mp4")
+    print(f"Video uploaded successfully: {video_url} (file_size={upload_data.get('file_size')} bytes)")
+
+    # 2. Serve video with range request (HTTP 206 Partial Content)
+    range_headers = {"Range": "bytes=0-15"}
+    serve_res = requests.get(f"{BASE_URL}{video_url}", headers=range_headers, timeout=10)
+    assert serve_res.status_code in [200, 206], f"Serving returned {serve_res.status_code}"
+    print(f"Video streaming range response status: {serve_res.status_code}, Accept-Ranges: {serve_res.headers.get('Accept-Ranges')}")
+    print(">> Uploaded video streaming verified.\n")
+
+    # 3. Create emergency with both photo and video
+    import uuid
+    uid_video = uuid.uuid4().hex[:8]
+    emergency_payload = {
+        "student_name": "Aarav Sharma",
+        "mobile_number": "9000000001",
+        "enrollment_number": "MUR2500001",
+        "emergency_type": "Fire Incident",
+        "description": f"Smoke seen in Chemistry lab block with video and photo evidence [{uid_video}].",
+        "location": "Chemistry Block",
+        "video_url": video_url,
+        "client_request_id": f"req_video_{uid_video}",
+    }
+    res_emg = requests.post(f"{BASE_URL}/api/emergency", json=emergency_payload, timeout=10)
+    assert res_emg.status_code in [200, 201], f"Emergency creation failed: {res_emg.text}"
+    emg_data = res_emg.json()
+    emg_id = emg_data.get("emergency_id")
+    print(f"Created emergency #{emg_id} with video_url: {emg_data.get('video_url')}")
+    assert emg_data.get("video_url") == video_url
+
+    # 4. Fetch emergency by ID (for admin/tracking)
+    res_fetch = requests.get(f"{BASE_URL}/api/emergency/{emg_id}", timeout=10)
+    assert res_fetch.status_code == 200
+    fetched_data = res_fetch.json()
+    assert fetched_data.get("video_url") == video_url, f"Fetched record missing video_url: {fetched_data}"
+    print(f"Admin fetch emergency #{emg_id} video_url: {fetched_data.get('video_url')}")
+    print(">> Video upload, streaming, and emergency persistence PASSED.\n")
+
+    return video_url
+
+
 if __name__ == "__main__":
     test_creator_attribution()
     test_normal_queries_no_creator()
     photo_url = test_photo_upload_and_serving()
     test_chat_and_emergency_with_photo(photo_url)
+    video_url = test_video_upload_and_serving()
     print("==================================================")
     print("ALL VERIFICATION SUITES PASSED SUCCESSFULLY!")
     print("==================================================")
+

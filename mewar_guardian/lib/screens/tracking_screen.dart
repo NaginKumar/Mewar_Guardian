@@ -451,6 +451,66 @@ class _TrackingScreenState extends State<TrackingScreen> {
               ),
             ],
 
+            if (_data?['video_url'] != null && _data!['video_url'].toString().isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.videocam_rounded, color: AppColors.safetyOrange, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          "ATTACHED VIDEO FOOTAGE",
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.safetyOrange.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.safetyOrange.withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 36),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Incident Video Transmitted",
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  "Stored in secure safety media storage for command center",
+                                  style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.check_circle, color: AppColors.successGreen, size: 20),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             if (recommendation.isNotEmpty) ...[
               const SizedBox(height: 16),
               Container(

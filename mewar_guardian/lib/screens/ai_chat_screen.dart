@@ -22,6 +22,9 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   Uint8List? _selectedImageBytes;
   String? _selectedImageName;
+  Uint8List? _selectedVideoBytes;
+  String? _selectedVideoName;
+  bool _isUploadingMedia = false;
 
   @override
   void initState() {
@@ -30,6 +33,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
       "role": "assistant",
       "content": "Namaste! Main Mewar Guardian AI hoon 🛡️\nMewar University campus safety ke baare mein kuch poochna hai? Ya koi emergency hai? Mujhe batao, main turant help karunga!",
       "photo_url": null,
+      "video_url": null,
     });
   }
 
@@ -46,6 +50,8 @@ class _AiChatScreenState extends State<AiChatScreen> {
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageName = file.name;
+          _selectedVideoBytes = null;
+          _selectedVideoName = null;
         });
       }
     } catch (e) {
@@ -60,7 +66,45 @@ class _AiChatScreenState extends State<AiChatScreen> {
     }
   }
 
-  void _showImageSourcePicker() {
+  Future<void> _pickVideo(ImageSource source) async {
+    try {
+      final XFile? file = await _picker.pickVideo(
+        source: source,
+        maxDuration: const Duration(minutes: 3),
+      );
+      if (file != null) {
+        final bytes = await file.readAsBytes();
+        if (bytes.lengthInBytes > 50 * 1024 * 1024) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Selected video exceeds 50MB limit."),
+                backgroundColor: AppColors.criticalRed,
+              ),
+            );
+          }
+          return;
+        }
+        setState(() {
+          _selectedVideoBytes = bytes;
+          _selectedVideoName = file.name;
+          _selectedImageBytes = null;
+          _selectedImageName = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Could not access video: $e"),
+            backgroundColor: AppColors.criticalRed,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showAttachmentPicker() {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.white,
@@ -80,16 +124,16 @@ class _AiChatScreenState extends State<AiChatScreen> {
               ),
               const SizedBox(height: 16),
               const Text(
-                "Attach Incident Photo",
+                "Attach Incident Evidence",
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
               ),
               const SizedBox(height: 6),
               const Text(
-                "Photos are stored securely for campus safety verification.",
+                "Upload photos or videos (up to 50MB) for AI safety analysis and security records.",
                 style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(10),
@@ -109,11 +153,37 @@ class _AiChatScreenState extends State<AiChatScreen> {
                   decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
                   child: const Icon(Icons.photo_library_rounded, color: AppColors.forestGreen),
                 ),
-                title: const Text("Choose from Gallery", style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text("Select image from your device", style: TextStyle(fontSize: 12)),
+                title: const Text("Choose Photo from Gallery", style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text("Select image from device", style: TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickImage(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.safetyOrange.withOpacity(0.12), shape: BoxShape.circle),
+                  child: const Icon(Icons.videocam_rounded, color: AppColors.safetyOrange),
+                ),
+                title: const Text("Record Video with Camera", style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text("Live video footage (up to 3 min)", style: TextStyle(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickVideo(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.safetyOrange.withOpacity(0.12), shape: BoxShape.circle),
+                  child: const Icon(Icons.video_library_rounded, color: AppColors.safetyOrange),
+                ),
+                title: const Text("Choose Video from Gallery", style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text("Select video file (max 50MB)", style: TextStyle(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickVideo(ImageSource.gallery);
                 },
               ),
             ],
@@ -130,49 +200,87 @@ class _AiChatScreenState extends State<AiChatScreen> {
     });
   }
 
+  void _removeSelectedVideo() {
+    setState(() {
+      _selectedVideoBytes = null;
+      _selectedVideoName = null;
+    });
+  }
+
   void _sendMessage() async {
     final text = _msgController.text.trim();
-    if ((text.isEmpty && _selectedImageBytes == null) || _isTyping || _isUploadingPhoto) return;
+    if ((text.isEmpty && _selectedImageBytes == null && _selectedVideoBytes == null) || _isTyping || _isUploadingMedia) return;
 
     final imageBytesToSend = _selectedImageBytes;
     final imageNameToSend = _selectedImageName ?? 'incident_photo.jpg';
+    final videoBytesToSend = _selectedVideoBytes;
+    final videoNameToSend = _selectedVideoName ?? 'incident_video.mp4';
 
     // Clear draft state
     _msgController.clear();
     setState(() {
       _selectedImageBytes = null;
       _selectedImageName = null;
+      _selectedVideoBytes = null;
+      _selectedVideoName = null;
       _isTyping = true;
     });
 
     final api = Provider.of<ApiService>(context, listen: false);
-    String? uploadedUrl;
+    String? uploadedPhotoUrl;
+    String? uploadedVideoUrl;
 
     if (imageBytesToSend != null) {
-      setState(() => _isUploadingPhoto = true);
+      setState(() => _isUploadingMedia = true);
       final uploadRes = await api.uploadImage(imageBytesToSend, imageNameToSend);
-      setState(() => _isUploadingPhoto = false);
+      setState(() => _isUploadingMedia = false);
 
       if (uploadRes['success'] == true) {
-        uploadedUrl = uploadRes['photo_url'];
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(uploadRes['error'] ?? "Failed to upload image."),
-              backgroundColor: AppColors.criticalRed,
-            ),
-          );
-        }
+        uploadedPhotoUrl = uploadRes['photo_url'];
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(uploadRes['error'] ?? "Failed to upload image."),
+            backgroundColor: AppColors.criticalRed,
+          ),
+        );
+      }
+    }
+
+    if (videoBytesToSend != null) {
+      setState(() => _isUploadingMedia = true);
+      final uploadRes = await api.uploadVideo(videoBytesToSend, videoNameToSend);
+      setState(() => _isUploadingMedia = false);
+
+      if (uploadRes['success'] == true) {
+        uploadedVideoUrl = uploadRes['video_url'];
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(uploadRes['error'] ?? "Failed to upload video."),
+            backgroundColor: AppColors.criticalRed,
+          ),
+        );
+      }
+    }
+
+    String displayContent = text;
+    if (displayContent.isEmpty) {
+      if (uploadedVideoUrl != null) {
+        displayContent = "🎥 Attached incident video footage";
+      } else if (uploadedPhotoUrl != null) {
+        displayContent = "📸 Attached incident photo";
       }
     }
 
     setState(() {
       _messages.add({
         "role": "user",
-        "content": text.isNotEmpty ? text : (uploadedUrl != null ? "📸 Attached incident photo" : ""),
-        "photo_url": uploadedUrl,
+        "content": displayContent,
+        "photo_url": uploadedPhotoUrl,
         "photo_bytes": imageBytesToSend,
+        "video_url": uploadedVideoUrl,
+        "video_name": videoNameToSend,
       });
     });
     _scrollToBottom();
@@ -182,9 +290,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
         .toList();
 
     final response = await api.chatWithAi(
-      text.isNotEmpty ? text : "I have attached an incident photo.",
+      text.isNotEmpty ? text : (uploadedVideoUrl != null ? "I have attached an incident video." : "I have attached an incident photo."),
       history,
-      photoUrl: uploadedUrl,
+      photoUrl: uploadedPhotoUrl,
+      videoUrl: uploadedVideoUrl,
     );
 
     if (!mounted) return;
@@ -205,6 +314,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
         "role": "assistant",
         "content": reply,
         "photo_url": null,
+        "video_url": null,
       });
     });
     _scrollToBottom();
@@ -361,6 +471,33 @@ class _AiChatScreenState extends State<AiChatScreen> {
                             ),
                             const SizedBox(height: 8),
                           ],
+                          // Video preview badge if attached
+                          if (msg["video_url"] != null) ...[
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isUser ? Colors.white.withOpacity(0.18) : AppColors.safetyOrange.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: isUser ? Colors.white24 : AppColors.safetyOrange.withOpacity(0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.videocam_rounded, size: 20, color: isUser ? Colors.white : AppColors.safetyOrange),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    msg["video_name"]?.toString() ?? "Incident Video Transmitted",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isUser ? Colors.white : AppColors.charcoal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           if (msg["content"] != null && (msg["content"] as String).isNotEmpty)
                             Text(
                               msg["content"] ?? "",
@@ -445,7 +582,72 @@ class _AiChatScreenState extends State<AiChatScreen> {
                       ),
                     ),
                     TextButton(
-                      onPressed: _showImageSourcePicker,
+                      onPressed: _showAttachmentPicker,
+                      child: const Text("Replace", style: TextStyle(fontSize: 12, color: AppColors.forestGreen, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Video Preview Bar if a video is selected
+            if (_selectedVideoBytes != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: AppColors.white,
+                child: Row(
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            color: AppColors.safetyOrange.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.safetyOrange.withOpacity(0.3)),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 28),
+                          ),
+                        ),
+                        Positioned(
+                          top: -6,
+                          right: -6,
+                          child: GestureDetector(
+                            onTap: _removeSelectedVideo,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                color: AppColors.criticalRed,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _selectedVideoName ?? "Incident Video",
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            "${(_selectedVideoBytes!.lengthInBytes / (1024 * 1024)).toStringAsFixed(1)} MB • Video ready to upload",
+                            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _showAttachmentPicker,
                       child: const Text("Replace", style: TextStyle(fontSize: 12, color: AppColors.forestGreen, fontWeight: FontWeight.bold)),
                     ),
                   ],
@@ -459,15 +661,15 @@ class _AiChatScreenState extends State<AiChatScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.camera_alt_outlined, color: AppColors.forestGreen),
-                    tooltip: "Attach Photo",
-                    onPressed: _showImageSourcePicker,
+                    icon: const Icon(Icons.add_photo_alternate_outlined, color: AppColors.forestGreen),
+                    tooltip: "Attach Photo / Video",
+                    onPressed: _showAttachmentPicker,
                   ),
                   Expanded(
                     child: TextField(
                       controller: _msgController,
                       decoration: InputDecoration(
-                        hintText: _selectedImageBytes != null
+                        hintText: (_selectedImageBytes != null || _selectedVideoBytes != null)
                             ? "Add description (optional)..."
                             : "Ask anything about campus safety...",
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -478,7 +680,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                   ),
                   const SizedBox(width: 6),
                   IconButton(
-                    icon: _isUploadingPhoto
+                    icon: _isUploadingMedia
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.forestGreen))
                         : const Icon(Icons.send_rounded, color: AppColors.forestGreen),
                     onPressed: _sendMessage,

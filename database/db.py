@@ -6,6 +6,7 @@ import os
 import secrets
 import hashlib
 from core.sms_service import send_otp_sms
+from core.email_service import send_password_reset_email, is_email_configured, mask_email
 
 DB_HOST = os.getenv("MYSQL_HOST", "localhost")
 DB_USER = os.getenv("MYSQL_USER", "root")
@@ -147,7 +148,8 @@ def create_database():
                 location_accuracy REAL,
                 responder_lat     REAL,
                 responder_lon     REAL,
-                photo_url         TEXT
+                photo_url         TEXT,
+                video_url         TEXT
             )
         """)
     else:
@@ -189,7 +191,8 @@ def create_database():
                 location_accuracy REAL,
                 responder_lat     REAL,
                 responder_lon     REAL,
-                photo_url         TEXT
+                photo_url         TEXT,
+                video_url         TEXT
             )
         """)
 
@@ -209,6 +212,7 @@ def create_students_table():
             enrollment_number VARCHAR(100) PRIMARY KEY,
             student_name      VARCHAR(255),
             mobile_number     VARCHAR(20),
+            email             VARCHAR(255),
             password_hash     VARCHAR(255),
             role              VARCHAR(50) DEFAULT 'Student',
             registered_at     DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -300,6 +304,7 @@ def add_missing_columns():
         "responder_lat":     "REAL",
         "responder_lon":     "REAL",
         "photo_url":         "TEXT",
+        "video_url":         "TEXT",
     }
 
     for col, col_type in new_columns.items():
@@ -319,6 +324,8 @@ def add_missing_columns():
             cursor.execute("ALTER TABLE students ADD COLUMN password_hash VARCHAR(255)")
         if "role" not in student_cols:
             cursor.execute("ALTER TABLE students ADD COLUMN role VARCHAR(50) DEFAULT 'Student'")
+        if "email" not in student_cols:
+            cursor.execute("ALTER TABLE students ADD COLUMN email VARCHAR(255)")
     except Exception as e:
         print(f"[students column migration] {e}")
 
@@ -349,7 +356,8 @@ def add_emergency(
     location_accuracy=None,
     responder_lat=None,
     responder_lon=None,
-    photo_url=None
+    photo_url=None,
+    video_url=None
 ) -> int:
     """Insert a new emergency record and return its auto-generated ID."""
     conn = get_connection()
@@ -363,13 +371,13 @@ def add_emergency(
             student_name, mobile_number, enrollment_number, emergency_type, location, description,
             priority, time, reported_time, status, responder, distance,
             ai_confidence, risk_score, recommendation, estimated_minutes,
-            student_lat, student_lon, location_accuracy, responder_lat, responder_lon, photo_url
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            student_lat, student_lon, location_accuracy, responder_lat, responder_lon, photo_url, video_url
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         student_name, mobile_number, enrollment_number, emergency_type, location, description,
         priority, now_str, now_str, "Pending", responder, distance,
         ai_confidence, risk_score, recommendation, estimated_minutes,
-        student_lat, student_lon, location_accuracy, responder_lat, responder_lon, photo_url
+        student_lat, student_lon, location_accuracy, responder_lat, responder_lon, photo_url, video_url
     ))
 
     emergency_id = cursor.lastrowid
@@ -378,24 +386,25 @@ def add_emergency(
     return emergency_id
 
 
-def save_student_profile(enrollment: str, name: str, mobile: str) -> bool:
+def save_student_profile(enrollment: str, name: str, mobile: str, email: str = None) -> bool:
     """Upsert student profile into the students table."""
     conn = get_connection()
     if not conn: return False
     cursor = conn.cursor()
     try:
+        clean_email = email.strip().lower() if email else None
         if getattr(conn, 'is_sqlite', False):
             cursor.execute("""
-                INSERT INTO students (enrollment_number, student_name, mobile_number)
-                VALUES (%s, %s, %s)
-                ON CONFLICT(enrollment_number) DO UPDATE SET student_name=excluded.student_name, mobile_number=excluded.mobile_number
-            """, (enrollment, name, mobile))
+                INSERT INTO students (enrollment_number, student_name, mobile_number, email)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT(enrollment_number) DO UPDATE SET student_name=excluded.student_name, mobile_number=excluded.mobile_number, email=COALESCE(excluded.email, students.email)
+            """, (enrollment.upper(), name, mobile, clean_email))
         else:
             cursor.execute("""
-                INSERT INTO students (enrollment_number, student_name, mobile_number)
-                VALUES (%s, %s, %s)
-                ON DUPLICATE KEY UPDATE student_name=%s, mobile_number=%s
-            """, (enrollment, name, mobile, name, mobile))
+                INSERT INTO students (enrollment_number, student_name, mobile_number, email)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE student_name=%s, mobile_number=%s, email=COALESCE(%s, email)
+            """, (enrollment.upper(), name, mobile, clean_email, name, mobile, clean_email))
         conn.commit()
         return True
     except Exception as e:
@@ -405,12 +414,13 @@ def save_student_profile(enrollment: str, name: str, mobile: str) -> bool:
         conn.close()
 
 
-def register_student(enrollment: str, name: str, mobile: str, password: str) -> tuple[bool, str]:
-    """Register a new student with salted password hash and role='Student'."""
+def register_student(enrollment: str, name: str, mobile: str, password: str, email: str = None) -> tuple[bool, str]:
+    """Register a new student with salted password hash, optional email, and role='Student'."""
     enrollment = str(enrollment).strip().upper()
     name = str(name).strip()
     mobile = str(mobile).strip()
     password = str(password).strip()
+    clean_email = email.strip().lower() if email else None
 
     if not name or len(name) < 2:
         return False, "Full name must be at least 2 characters."
@@ -420,6 +430,10 @@ def register_student(enrollment: str, name: str, mobile: str, password: str) -> 
         return False, "Enrollment number must start with MUR (e.g., MUR2500001)."
     if not password or len(password) < 4:
         return False, "Password must be at least 4 characters long."
+
+    if clean_email:
+        if "@" not in clean_email or "." not in clean_email.split("@")[-1]:
+            return False, "Please enter a valid email address format."
 
     conn = get_connection()
     if not conn:
@@ -435,12 +449,17 @@ def register_student(enrollment: str, name: str, mobile: str, password: str) -> 
         if cursor.fetchone():
             return False, "An account with this mobile number already exists."
 
+        if clean_email:
+            cursor.execute("SELECT enrollment_number FROM students WHERE email = %s", (clean_email,))
+            if cursor.fetchone():
+                return False, "An account with this email address already exists."
+
         pwd_hash = generate_password_hash(password)
 
         cursor.execute("""
-            INSERT INTO students (enrollment_number, student_name, mobile_number, password_hash, role)
-            VALUES (%s, %s, %s, %s, 'Student')
-        """, (enrollment, name, mobile, pwd_hash))
+            INSERT INTO students (enrollment_number, student_name, mobile_number, email, password_hash, role)
+            VALUES (%s, %s, %s, %s, %s, 'Student')
+        """, (enrollment, name, mobile, clean_email, pwd_hash))
         conn.commit()
         return True, "Student registered successfully."
     except Exception as e:
@@ -464,10 +483,10 @@ def authenticate_student(identifier: str, password: str) -> dict | None:
     cursor = conn.cursor(pymysql.cursors.DictCursor)
     try:
         cursor.execute("""
-            SELECT enrollment_number, student_name, mobile_number, password_hash, role
+            SELECT enrollment_number, student_name, mobile_number, email, password_hash, role
             FROM students
-            WHERE enrollment_number = %s OR mobile_number = %s
-        """, (ident.upper(), ident))
+            WHERE enrollment_number = %s OR mobile_number = %s OR email = %s
+        """, (ident.upper(), ident, ident.lower()))
         row = cursor.fetchone()
         if not row:
             return None
@@ -478,6 +497,7 @@ def authenticate_student(identifier: str, password: str) -> dict | None:
                 "enrollment_number": row["enrollment_number"],
                 "student_name": row["student_name"],
                 "mobile_number": row["mobile_number"],
+                "email": row.get("email"),
                 "role": row.get("role", "Student")
             }
         return None
@@ -495,7 +515,7 @@ def get_student_profile(enrollment: str) -> dict | None:
     cursor = conn.cursor(pymysql.cursors.DictCursor)
     try:
         cursor.execute("""
-            SELECT enrollment_number, student_name, mobile_number, role, registered_at
+            SELECT enrollment_number, student_name, mobile_number, email, role, registered_at
             FROM students WHERE enrollment_number = %s
         """, (enrollment.upper(),))
         row = cursor.fetchone()
@@ -516,7 +536,7 @@ def get_student_emergencies(enrollment_or_mobile: str) -> list[dict]:
     try:
         cursor.execute("""
             SELECT id, emergency_type, location, description, priority, status, time,
-                   responder, estimated_minutes, recommendation, photo_url
+                   responder, estimated_minutes, recommendation, photo_url, video_url
             FROM emergencies
             WHERE enrollment_number = %s OR mobile_number = %s
             ORDER BY id DESC LIMIT 50
@@ -550,23 +570,47 @@ def delete_student_account(enrollment: str, password: str) -> tuple[bool, str]:
         conn.close()
 
 
-def initiate_password_reset(enrollment: str, mobile: str) -> tuple[bool, str, str | None]:
+def _to_datetime(val):
+    if not val:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str):
+        val_clean = val.strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+            try:
+                return datetime.strptime(val_clean, fmt)
+            except ValueError:
+                pass
+        try:
+            return datetime.fromisoformat(val_clean)
+        except Exception:
+            pass
+    return None
+
+
+def initiate_password_reset(enrollment: str, email: str = None, mobile: str = None) -> tuple[bool, str, str | None]:
     """
-    Initiates password recovery.
+    Initiates secure password recovery via email.
     1. Looks up student by enrollment_number.
-    2. Validates that the provided mobile matches the registered mobile number.
-    3. To prevent account enumeration, if no match, returns a generic safe message without error.
-    4. Enforces a 60-second resend cooldown.
-    5. Invalidates any prior active OTPs for this account.
-    6. Generates a secure random 6-digit OTP, stores its SHA-256 hash with 5-minute expiry.
-    7. Dispatches the OTP via real SMS provider.
+    2. Validates that the provided email matches the registered email address.
+    3. If student has no registered email, returns clear informative message.
+    4. To prevent account enumeration, if no match, returns a generic safe message without error.
+    5. Enforces a 60-second resend cooldown.
+    6. Invalidates any prior active OTPs for this account.
+    7. Generates a secure random 6-digit OTP, stores its SHA-256 hash with 15-minute expiry.
+    8. Dispatches the OTP via real SMTP email service.
     Returns (success, message, dev_otp_if_testing).
     """
     enroll = str(enrollment).strip().upper()
-    mob = str(mobile).strip().replace(" ", "").replace("-", "")
+    req_email = str(email).strip().lower() if email else None
+    mob = str(mobile).strip().replace(" ", "").replace("-", "") if mobile else None
 
-    if not enroll or not mob:
-        return False, "Enrollment number and registered mobile number are required.", None
+    if not enroll:
+        return False, "Enrollment number is required.", None
+
+    if not req_email and not mob:
+        return False, "Registered email address is required for password recovery.", None
 
     conn = get_connection()
     if not conn:
@@ -574,46 +618,75 @@ def initiate_password_reset(enrollment: str, mobile: str) -> tuple[bool, str, st
 
     cursor = conn.cursor(pymysql.cursors.DictCursor)
     try:
-        cursor.execute("SELECT enrollment_number, student_name, mobile_number FROM students WHERE enrollment_number = %s", (enroll,))
+        cursor.execute("SELECT enrollment_number, student_name, mobile_number, email FROM students WHERE enrollment_number = %s", (enroll,))
         student = cursor.fetchone()
 
-        # If student doesn't exist or mobile does not match, return safe generic message
-        if not student or str(student.get("mobile_number", "")).strip() != mob:
-            return True, "If the account details are valid, an OTP will be sent to the registered mobile number.", None
+        # If student doesn't exist, return safe generic message to prevent account enumeration
+        if not student:
+            return True, "If the account details are valid, a password reset code has been sent to your registered contact.", None
 
-        registered_mobile = student["mobile_number"]
+        registered_email = student.get("email")
+        registered_mobile = student.get("mobile_number") or ""
+
+        # Email recovery preference
+        if req_email:
+            if not registered_email:
+                return False, "This account does not have a registered email address. Please contact campus administration to link your email address.", None
+
+            if registered_email.strip().lower() != req_email:
+                # Generic message to prevent enumeration
+                return True, "If the account details are valid, a password reset code has been sent to your registered email.", None
+
+            target_destination = registered_email
+            is_via_email = True
+        else:
+            # Fallback to mobile if email not provided
+            if not registered_mobile or registered_mobile != mob:
+                return True, "If the account details are valid, an OTP has been sent.", None
+            target_destination = registered_mobile
+            is_via_email = False
 
         # Check 60-second cooldown
         one_min_ago = datetime.now() - timedelta(seconds=60)
         cursor.execute("""
             SELECT created_at FROM password_resets
-            WHERE enrollment_number = %s AND is_used = FALSE AND created_at > %s
+            WHERE enrollment_number = %s AND (is_used = FALSE OR is_used = 0)
             ORDER BY id DESC LIMIT 1
-        """, (enroll, one_min_ago))
+        """, (enroll,))
         recent = cursor.fetchone()
-        if recent:
-            return False, "Please wait at least 60 seconds before requesting a new OTP.", None
+        if recent and recent.get("created_at"):
+            c_dt = _to_datetime(recent["created_at"])
+            if c_dt and c_dt > one_min_ago:
+                return False, "Please wait at least 60 seconds before requesting a new verification code.", None
 
         # Invalidate previous unused OTPs
-        cursor.execute("UPDATE password_resets SET is_used = TRUE WHERE enrollment_number = %s AND is_used = FALSE", (enroll,))
+        cursor.execute("UPDATE password_resets SET is_used = 1 WHERE enrollment_number = %s AND (is_used = FALSE OR is_used = 0)", (enroll,))
 
         # Generate cryptographically secure random 6-digit OTP
         otp = f"{secrets.randbelow(900000) + 100000}"
         otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
-        expires_at = datetime.now() + timedelta(minutes=5)
+        expires_at = datetime.now() + timedelta(minutes=15)
 
         cursor.execute("""
             INSERT INTO password_resets (enrollment_number, mobile_number, otp_hash, otp_expires_at)
             VALUES (%s, %s, %s, %s)
-        """, (enroll, registered_mobile, otp_hash, expires_at))
+        """, (enroll, target_destination, otp_hash, expires_at))
         conn.commit()
 
-        # Dispatch via SMS service
-        sms_ok, sms_msg = send_otp_sms(registered_mobile, otp)
+        # Dispatch via Email (or fallback to SMS simulator)
+        if is_via_email:
+            ok, dispatch_msg = send_password_reset_email(registered_email, student.get("student_name", ""), otp)
+            if not ok:
+                return False, dispatch_msg, None
 
-        # Return generic safe message (plus OTP only if dev simulator)
-        dev_otp = otp if ("logged to development console" in sms_msg or os.getenv("FLASK_ENV") != "production") else None
-        return True, "If the account details are valid, an OTP will be sent to the registered mobile number.", dev_otp
+            raw_dev = (os.getenv("ALLOW_DEV_EMAIL_OTP") or "").strip().lower()
+            allow_dev = raw_dev in ("true", "1", "yes") or bool(os.getenv("PYTEST_CURRENT_TEST")) or ("test" in (os.getenv("FLASK_ENV") or "").lower())
+            dev_otp = otp if allow_dev else None
+            return True, f"A 6-digit verification code has been sent to your registered email ({mask_email(registered_email)}).", dev_otp
+        else:
+            sms_ok, sms_msg = send_otp_sms(registered_mobile, otp)
+            dev_otp = otp if os.getenv("FLASK_ENV") != "production" else None
+            return True, "If the account details are valid, an OTP will be sent to the registered mobile number.", dev_otp
 
     except Exception as e:
         print(f"[Password Reset Initiate Error] {e}")
@@ -645,7 +718,7 @@ def verify_reset_otp(enrollment: str, otp: str) -> tuple[bool, str, str | None]:
         cursor.execute("""
             SELECT id, otp_hash, otp_expires_at, otp_attempts, is_verified, is_used
             FROM password_resets
-            WHERE enrollment_number = %s AND is_used = FALSE AND is_verified = FALSE
+            WHERE enrollment_number = %s AND (is_used = FALSE OR is_used = 0) AND (is_verified = FALSE OR is_verified = 0)
             ORDER BY id DESC LIMIT 1
         """, (enroll,))
         record = cursor.fetchone()
@@ -656,21 +729,23 @@ def verify_reset_otp(enrollment: str, otp: str) -> tuple[bool, str, str | None]:
         rec_id = record["id"]
 
         # Check expiry
-        if datetime.now() > record["otp_expires_at"]:
-            cursor.execute("UPDATE password_resets SET is_used = TRUE WHERE id = %s", (rec_id,))
+        otp_expiry = _to_datetime(record.get("otp_expires_at"))
+        if otp_expiry and datetime.now() > otp_expiry:
+            cursor.execute("UPDATE password_resets SET is_used = 1 WHERE id = %s", (rec_id,))
             conn.commit()
             return False, "Verification code has expired. Please request a new code.", None
 
         # Check maximum attempts
-        if record["otp_attempts"] >= 5:
-            cursor.execute("UPDATE password_resets SET is_used = TRUE WHERE id = %s", (rec_id,))
+        attempts = record.get("otp_attempts") or 0
+        if attempts >= 5:
+            cursor.execute("UPDATE password_resets SET is_used = 1 WHERE id = %s", (rec_id,))
             conn.commit()
             return False, "Maximum verification attempts exceeded. Please request a new code.", None
 
         # Check hash
         entered_hash = hashlib.sha256(otp_code.encode("utf-8")).hexdigest()
         if entered_hash != record["otp_hash"]:
-            new_attempts = record["otp_attempts"] + 1
+            new_attempts = attempts + 1
             cursor.execute("UPDATE password_resets SET otp_attempts = %s WHERE id = %s", (new_attempts, rec_id))
             conn.commit()
             remaining = max(0, 5 - new_attempts)
@@ -682,7 +757,7 @@ def verify_reset_otp(enrollment: str, otp: str) -> tuple[bool, str, str | None]:
 
         cursor.execute("""
             UPDATE password_resets
-            SET is_verified = TRUE, reset_token = %s, token_expires_at = %s
+            SET is_verified = 1, reset_token = %s, token_expires_at = %s
             WHERE id = %s
         """, (reset_token, token_expires_at, rec_id))
         conn.commit()
@@ -698,7 +773,7 @@ def verify_reset_otp(enrollment: str, otp: str) -> tuple[bool, str, str | None]:
 
 def complete_password_reset(enrollment: str, reset_token: str, new_password: str) -> tuple[bool, str]:
     """
-    Validates reset authorization token and updates student's password hash in MySQL.
+    Validates reset authorization token and updates student's password hash in MySQL / SQLite.
     Consumes the reset token so it cannot be reused.
     """
     enroll = str(enrollment).strip().upper()
@@ -720,7 +795,7 @@ def complete_password_reset(enrollment: str, reset_token: str, new_password: str
         cursor.execute("""
             SELECT id, token_expires_at, is_used, is_verified
             FROM password_resets
-            WHERE enrollment_number = %s AND reset_token = %s AND is_verified = TRUE AND is_used = FALSE
+            WHERE enrollment_number = %s AND reset_token = %s AND (is_verified = TRUE OR is_verified = 1) AND (is_used = FALSE OR is_used = 0)
         """, (enroll, token))
         record = cursor.fetchone()
 
@@ -729,8 +804,9 @@ def complete_password_reset(enrollment: str, reset_token: str, new_password: str
 
         rec_id = record["id"]
 
-        if datetime.now() > record["token_expires_at"]:
-            cursor.execute("UPDATE password_resets SET is_used = TRUE WHERE id = %s", (rec_id,))
+        token_expiry = _to_datetime(record.get("token_expires_at"))
+        if token_expiry and datetime.now() > token_expiry:
+            cursor.execute("UPDATE password_resets SET is_used = 1 WHERE id = %s", (rec_id,))
             conn.commit()
             return False, "Password reset session has expired. Please request a new OTP."
 
@@ -739,7 +815,7 @@ def complete_password_reset(enrollment: str, reset_token: str, new_password: str
 
         # Update student password and consume reset token
         cursor.execute("UPDATE students SET password_hash = %s WHERE enrollment_number = %s", (pwd_hash, enroll))
-        cursor.execute("UPDATE password_resets SET is_used = TRUE WHERE id = %s", (rec_id,))
+        cursor.execute("UPDATE password_resets SET is_used = 1 WHERE id = %s", (rec_id,))
         conn.commit()
 
         return True, "Password has been successfully updated. Please sign in with your new password."

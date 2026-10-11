@@ -34,11 +34,18 @@ app.config.update(
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+ALLOWED_VIDEO_EXTENSIONS = {"mp4", "webm", "mov", "mkv"}
+ALLOWED_EXTENSIONS = ALLOWED_IMAGE_EXTENSIONS | ALLOWED_VIDEO_EXTENSIONS
+MAX_IMAGE_SIZE = 10 * 1024 * 1024   # 10 MB for images
+MAX_VIDEO_SIZE = 50 * 1024 * 1024   # 50 MB for videos
+MAX_FILE_SIZE = MAX_VIDEO_SIZE
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def is_video_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
 
 CORS(
     app,
@@ -100,8 +107,9 @@ def security_logout():
 # ----------------------------------------------------------
 
 @app.route("/api/health", methods=["GET"])
+@app.route("/health", methods=["GET"])
 def health_check():
-    return jsonify({"status": "ok", "message": "Rakshak AI Backend is running", "timestamp": datetime.now().isoformat()}), 200
+    return jsonify({"status": "ok", "message": "Mewar Guardian Backend is running", "timestamp": datetime.now().isoformat()}), 200
 
 
 # ----------------------------------------------------------
@@ -252,37 +260,49 @@ def _match_location(text):
 
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
-    """Upload incident photo/evidence securely with type and size validation."""
+    """Upload incident photo or video evidence securely with type and size validation."""
     file = None
-    for field_name in ["photo", "image", "file"]:
+    for field_name in ["file", "video", "photo", "image", "media"]:
         if field_name in request.files:
             file = request.files[field_name]
             break
             
     if file and file.filename != "":
         if not allowed_file(file.filename):
-            return jsonify({"success": False, "error": "Invalid file type. Allowed: JPG, PNG, WEBP."}), 400
-        
-        file_bytes = file.read()
-        if len(file_bytes) > MAX_FILE_SIZE:
-            return jsonify({"success": False, "error": "File size exceeds 5MB limit."}), 400
+            return jsonify({"success": False, "error": "Invalid file type. Allowed: JPG, PNG, WEBP, MP4, WEBM, MOV, MKV."}), 400
         
         ext = file.filename.rsplit(".", 1)[1].lower()
+        is_vid = ext in ALLOWED_VIDEO_EXTENSIONS
+        size_limit = MAX_VIDEO_SIZE if is_vid else MAX_IMAGE_SIZE
+        
+        file_bytes = file.read()
+        if len(file_bytes) > size_limit:
+            limit_mb = size_limit // (1024 * 1024)
+            media_lbl = "Video" if is_vid else "Photo"
+            return jsonify({"success": False, "error": f"{media_lbl} exceeds {limit_mb}MB limit."}), 400
+        
         unique_name = f"{uuid.uuid4().hex}.{ext}"
         save_path = os.path.join(UPLOAD_FOLDER, unique_name)
         with open(save_path, "wb") as f:
             f.write(file_bytes)
             
-        photo_url = f"/api/uploads/{unique_name}"
-        return jsonify({
+        media_url = f"/api/uploads/{unique_name}"
+        resp_data = {
             "success": True,
             "filename": unique_name,
-            "photo_url": photo_url
-        }), 200
+            "media_type": "video" if is_vid else "image",
+            "url": media_url,
+            "file_size": len(file_bytes)
+        }
+        if is_vid:
+            resp_data["video_url"] = media_url
+        else:
+            resp_data["photo_url"] = media_url
+        return jsonify(resp_data), 200
 
     if request.is_json:
         data = request.get_json(silent=True) or {}
-        b64_data = data.get("image_base64") or data.get("photo_base64") or data.get("data")
+        b64_data = data.get("media_base64") or data.get("image_base64") or data.get("photo_base64") or data.get("video_base64") or data.get("data")
         ext = (data.get("extension") or "jpg").lower().replace(".", "")
         if ext not in ALLOWED_EXTENSIONS:
             ext = "jpg"
@@ -292,18 +312,29 @@ def api_upload():
                 b64_data = b64_data.split(",", 1)[1]
             try:
                 raw_bytes = base64.b64decode(b64_data)
-                if len(raw_bytes) > MAX_FILE_SIZE:
-                    return jsonify({"success": False, "error": "File size exceeds 5MB limit."}), 400
+                is_vid = ext in ALLOWED_VIDEO_EXTENSIONS
+                size_limit = MAX_VIDEO_SIZE if is_vid else MAX_IMAGE_SIZE
+                if len(raw_bytes) > size_limit:
+                    limit_mb = size_limit // (1024 * 1024)
+                    media_lbl = "Video" if is_vid else "Photo"
+                    return jsonify({"success": False, "error": f"{media_lbl} exceeds {limit_mb}MB limit."}), 400
                 unique_name = f"{uuid.uuid4().hex}.{ext}"
                 save_path = os.path.join(UPLOAD_FOLDER, unique_name)
                 with open(save_path, "wb") as f:
                     f.write(raw_bytes)
-                photo_url = f"/api/uploads/{unique_name}"
-                return jsonify({
+                media_url = f"/api/uploads/{unique_name}"
+                resp_data = {
                     "success": True,
                     "filename": unique_name,
-                    "photo_url": photo_url
-                }), 200
+                    "media_type": "video" if is_vid else "image",
+                    "url": media_url,
+                    "file_size": len(raw_bytes)
+                }
+                if is_vid:
+                    resp_data["video_url"] = media_url
+                else:
+                    resp_data["photo_url"] = media_url
+                return jsonify(resp_data), 200
             except Exception as e:
                 return jsonify({"success": False, "error": f"Base64 decode failed: {str(e)}"}), 400
 
@@ -312,9 +343,9 @@ def api_upload():
 
 @app.route("/api/uploads/<path:filename>", methods=["GET"])
 def api_serve_upload(filename):
-    """Serve uploaded photos securely."""
+    """Serve uploaded photos and videos securely with partial content streaming support."""
     safe_name = secure_filename(filename)
-    return send_from_directory(UPLOAD_FOLDER, safe_name)
+    return send_from_directory(UPLOAD_FOLDER, safe_name, conditional=True)
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -323,12 +354,15 @@ def api_chat():
     user_message = body.get("message", "").strip()
     history = body.get("history", [])
     photo_url = body.get("photo_url") or body.get("image_url")
+    video_url = body.get("video_url")
 
-    if not user_message and not photo_url:
+    if not user_message and not photo_url and not video_url:
         return jsonify({"error": "Empty message"}), 400
 
     if not user_message and photo_url:
         user_message = "I have uploaded an emergency incident photo."
+    elif not user_message and video_url:
+        user_message = "I have uploaded an emergency incident video."
 
     dev_direct_match = _get_developer_response(user_message)
     if dev_direct_match:
@@ -347,6 +381,8 @@ def api_chat():
             prompt_content = user_message
             if photo_url:
                 prompt_content = f"{user_message} [Note: An incident image was attached: {photo_url}]"
+            elif video_url:
+                prompt_content = f"{user_message} [Note: An incident video was attached: {video_url}]"
             msgs.append({"role": "user", "content": prompt_content})
 
             resp = client.chat.completions.create(
@@ -386,16 +422,20 @@ def api_chat():
         }
         if photo_url:
             res["attached_photo"] = photo_url
+        if video_url:
+            res["attached_video"] = video_url
         return jsonify(res)
 
     res = {
-        "message": "Namaste! Main Mewar Guardian AI hoon. Campus safety ke baare mein kuch poochna hai? Ya koi emergency hai?" if not photo_url else "Image receive ho gayi hai aur safety record ke saath attach kar di gayi hai. Kya isme koi emergency assistance chahiye?",
+        "message": "Namaste! Main Mewar Guardian AI hoon. Campus safety ke baare mein kuch poochna hai? Ya koi emergency hai?" if not (photo_url or video_url) else "Media receive ho gaya hai aur incident record ke saath attach kar diya gaya hai. Kya isme koi emergency assistance chahiye?",
         "is_emergency": False, "emergency_type": None, "priority": None,
         "risk_score": None, "confidence": 0.95, "detected_location": None,
         "should_sos": False, "ask_sos": False, "safety_tips": []
     }
     if photo_url:
         res["attached_photo"] = photo_url
+    if video_url:
+        res["attached_video"] = video_url
     return jsonify(res)
 
 # ----------------------------------------------------------
@@ -421,6 +461,7 @@ def api_create_emergency():
     location_accuracy = body.get("location_accuracy")
     client_request_id = body.get("client_request_id")
     photo_url      = body.get("photo_url")
+    video_url      = body.get("video_url")
 
     # Idempotency check: prevent duplicate submissions within 30 seconds
     now = time.time()
@@ -484,7 +525,8 @@ def api_create_emergency():
             mobile_number=mobile_number, enrollment_number=enrollment_number,
             location_accuracy=location_accuracy,
             responder_lat=resp_data["lat"], responder_lon=resp_data["lon"],
-            photo_url=photo_url
+            photo_url=photo_url,
+            video_url=video_url
         )
     except Exception as e:
         print(f"[Database error] {e}")
@@ -504,6 +546,7 @@ def api_create_emergency():
         "description": description, "responder": responder_name,
         "estimated_minutes": estimated_minutes,
         "photo_url": photo_url,
+        "video_url": video_url,
         "reported_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
 
@@ -516,7 +559,8 @@ def api_create_emergency():
         "incident_lat": inc_lat, "incident_lon": inc_lon,
         "responder_lat": resp_data["lat"], "responder_lon": resp_data["lon"],
         "recommendation": recommendation,
-        "photo_url": photo_url
+        "photo_url": photo_url,
+        "video_url": video_url
     }
 
     with _idempotency_lock:
@@ -582,6 +626,8 @@ def api_get_emergencies():
             "incident_lat": _safe_float(row.get("student_lat")),
             "incident_lon": _safe_float(row.get("student_lon")),
             "location_accuracy": _safe_float(row.get("location_accuracy")),
+            "photo_url": row.get("photo_url"),
+            "video_url": row.get("video_url"),
         })
     return jsonify({"emergencies": emergencies})
 
@@ -653,12 +699,13 @@ def api_register():
         return jsonify({"success": False, "error": "Too many registration attempts. Please wait 1 minute."}), 429
 
     body = request.get_json(force=True)
-    name = body.get("name", "").strip()
-    mobile = body.get("mobile", "").strip()
-    enroll = body.get("enrollment", "").strip()
+    name = (body.get("name") or body.get("student_name") or "").strip()
+    mobile = (body.get("mobile") or body.get("mobile_number") or "").strip()
+    enroll = (body.get("enrollment") or body.get("enrollment_number") or "").strip()
     pwd = body.get("password", "").strip()
+    email = body.get("email", "").strip()
 
-    ok, msg = register_student(enrollment=enroll, name=name, mobile=mobile, password=pwd)
+    ok, msg = register_student(enrollment=enroll, name=name, mobile=mobile, password=pwd, email=email)
     if not ok:
         return jsonify({"success": False, "error": msg}), 400
 
@@ -670,6 +717,7 @@ def api_register():
             "student_name": name,
             "mobile_number": mobile,
             "enrollment_number": enroll.upper(),
+            "email": email or None,
             "role": "Student"
         }
     }), 201
@@ -682,7 +730,7 @@ def api_login():
         return jsonify({"success": False, "error": "Too many login attempts. Please wait 1 minute."}), 429
 
     body = request.get_json(force=True)
-    ident = (body.get("identifier") or body.get("enrollment") or body.get("mobile") or "").strip()
+    ident = (body.get("identifier") or body.get("enrollment") or body.get("enrollment_number") or body.get("mobile") or body.get("mobile_number") or "").strip()
     pwd = body.get("password", "").strip()
 
     if not ident or not pwd:
@@ -764,12 +812,13 @@ def api_forgot_password():
 
     body = request.get_json(force=True)
     enroll = (body.get("enrollment") or body.get("enrollment_number") or "").strip()
+    email = (body.get("email") or "").strip()
     mobile = (body.get("mobile") or body.get("mobile_number") or "").strip()
 
-    if not enroll or not mobile:
-        return jsonify({"success": False, "error": "Enrollment number and registered mobile number are required."}), 400
+    if not enroll or (not email and not mobile):
+        return jsonify({"success": False, "error": "Enrollment number and registered email address are required."}), 400
 
-    ok, msg, dev_otp = initiate_password_reset(enroll, mobile)
+    ok, msg, dev_otp = initiate_password_reset(enroll, email=email, mobile=mobile)
     if not ok:
         return jsonify({"success": False, "error": msg}), 400
 

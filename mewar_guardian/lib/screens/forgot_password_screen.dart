@@ -16,7 +16,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   // Step 1 Controllers
   final _enrollController = TextEditingController();
-  final _mobileController = TextEditingController();
+  final _emailController = TextEditingController();
 
   // Step 2 Controller & Timer
   final _otpController = TextEditingController();
@@ -41,7 +41,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   void dispose() {
     _resendTimer?.cancel();
     _enrollController.dispose();
-    _mobileController.dispose();
+    _emailController.dispose();
     _otpController.dispose();
     _newPwdController.dispose();
     _confirmPwdController.dispose();
@@ -64,17 +64,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
   }
 
-  // --- STEP 1: REQUEST OTP ---
+  // --- STEP 1: REQUEST OTP VIA EMAIL ---
   Future<void> _handleRequestOtp() async {
     final enroll = _enrollController.text.trim().toUpperCase();
-    final mobile = _mobileController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
 
     if (enroll.isEmpty || !enroll.startsWith("MUR")) {
       setState(() => _errorMessage = "Please enter a valid university enrollment number (e.g., MUR2500001).");
       return;
     }
-    if (mobile.length != 10 || !RegExp(r'^[0-9]+$').hasMatch(mobile)) {
-      setState(() => _errorMessage = "Please enter a valid 10-digit registered mobile number.");
+
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (email.isEmpty || !emailRegex.hasMatch(email)) {
+      setState(() => _errorMessage = "Please enter your valid registered university email address (e.g., student@mewaruniversity.org).");
       return;
     }
 
@@ -85,7 +87,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
 
     final api = Provider.of<ApiService>(context, listen: false);
-    final res = await api.forgotPassword(enroll, mobile);
+    final res = await api.forgotPassword(enroll, email);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -94,7 +96,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _startResendTimer();
       setState(() {
         _currentStep = 1;
-        _infoMessage = res['message'] ?? "If the account exists, an OTP has been sent.";
+        _infoMessage = res['message'] ?? "If the account exists, an email verification code has been dispatched.";
         if (res['dev_otp'] != null) {
           _devOtpNotice = "Dev OTP: ${res['dev_otp']}";
         }
@@ -108,7 +110,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Future<void> _handleResendOtp() async {
     if (!_canResend || _isLoading) return;
     final enroll = _enrollController.text.trim().toUpperCase();
-    final mobile = _mobileController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
 
     setState(() {
       _isLoading = true;
@@ -116,7 +118,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
 
     final api = Provider.of<ApiService>(context, listen: false);
-    final res = await api.forgotPassword(enroll, mobile);
+    final res = await api.forgotPassword(enroll, email);
 
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -124,7 +126,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     if (res['success'] == true) {
       _startResendTimer();
       setState(() {
-        _infoMessage = "A new verification code has been dispatched.";
+        _infoMessage = "A fresh email verification code has been sent.";
         if (res['dev_otp'] != null) {
           _devOtpNotice = "Dev OTP: ${res['dev_otp']}";
         }
@@ -380,7 +382,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
         const SizedBox(height: 6),
         const Text(
-          "Enter your university enrollment number and registered 10-digit mobile number.",
+          "Enter your university enrollment number and registered email address to receive a secure recovery code.",
           style: TextStyle(fontSize: 13, color: AppColors.textMuted, height: 1.35),
         ),
         const SizedBox(height: 20),
@@ -394,12 +396,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
         const SizedBox(height: 14),
         TextField(
-          controller: _mobileController,
-          keyboardType: TextInputType.phone,
+          controller: _emailController,
+          keyboardType: TextInputType.emailAddress,
           decoration: const InputDecoration(
-            labelText: 'Registered Mobile Number',
-            hintText: '10-digit mobile (e.g., 9000000001)',
-            prefixIcon: Icon(Icons.phone_android, color: AppColors.forestGreen),
+            labelText: 'Registered University Email',
+            hintText: 'e.g., student@mewaruniversity.org',
+            prefixIcon: Icon(Icons.email_outlined, color: AppColors.forestGreen),
           ),
         ),
         const SizedBox(height: 24),
@@ -413,7 +415,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             onPressed: _isLoading ? null : _handleRequestOtp,
             child: _isLoading
                 ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text("Send Verification OTP", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                : const Text("Send Recovery Code via Email", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
           ),
         ),
       ],
@@ -422,8 +424,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   // --- STEP 2 UI ---
   Widget _buildStep2Otp() {
-    final rawMob = _mobileController.text.trim();
-    final maskedMob = rawMob.length >= 10 ? "${rawMob.substring(0, 2)}••••••${rawMob.substring(rawMob.length - 2)}" : rawMob;
+    final rawEmail = _emailController.text.trim().toLowerCase();
+    String maskedEmail = rawEmail;
+    if (rawEmail.contains('@')) {
+      final parts = rawEmail.split('@');
+      final user = parts[0];
+      final domain = parts[1];
+      if (user.length > 2) {
+        maskedEmail = "${user[0]}••••${user[user.length - 1]}@$domain";
+      } else {
+        maskedEmail = "•••@$domain";
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -434,7 +446,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          "A 6-digit OTP has been sent to your registered mobile $maskedMob. Valid for 5 minutes.",
+          "A 6-digit verification code has been dispatched to your registered email ($maskedEmail). Valid for 15 minutes.",
           style: const TextStyle(fontSize: 13, color: AppColors.textMuted, height: 1.35),
         ),
         if (_devOtpNotice != null) ...[

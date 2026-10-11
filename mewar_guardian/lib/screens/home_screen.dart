@@ -37,15 +37,24 @@ class _HomeScreenState extends State<HomeScreen> {
         titleSpacing: 16,
         title: Row(
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppColors.deepGreen,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.mutedSage.withOpacity(0.4)),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/logo_icon.png',
+                width: 36,
+                height: 36,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.deepGreen,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.mutedSage.withOpacity(0.4)),
+                  ),
+                  child: const Icon(Icons.shield, color: AppColors.safetyOrange, size: 22),
+                ),
               ),
-              child: const Icon(Icons.shield, color: AppColors.safetyOrange, size: 22),
             ),
             const SizedBox(width: 10),
             const Column(

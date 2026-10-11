@@ -440,6 +440,7 @@ function renderEmgCard(e) {
         <span class="badge badge-${p}">${e.priority || "LOW"}</span>
         <span class="badge badge-${stCls}">${e.status}</span>
         ${e.photo_url ? `<span class="badge" style="background:rgba(56,189,248,0.2); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">📷 Photo</span>` : ''}
+        ${e.video_url ? `<span class="badge" style="background:rgba(168,85,247,0.2); color:#c084fc; border:1px solid rgba(168,85,247,0.3);">🎥 Video</span>` : ''}
       </div>
       <div class="emg-card-loc">\ud83d\udccd ${e.location || "-"}</div>
       <div class="emg-card-student" style="display:flex; flex-direction:column; gap:2px; margin-top:8px;">
@@ -557,6 +558,18 @@ function renderDetail(e) {
             <img src="${e.photo_url}" alt="Incident Photo" style="width:100%; max-height:220px; object-fit:cover; display:block; cursor:pointer;" title="Click to view full image" />
           </a>
           <div style="font-size:11px; color:#9ca3af; margin-top:6px;">Click photo to open full resolution</div>
+        </div>` : ''}
+
+        ${e.video_url ? `
+        <div style="margin-top: 16px; background: rgba(168,85,247,0.06); padding: 16px; border-radius: 12px; border: 1px solid rgba(168,85,247,0.25);">
+          <div style="font-size: 13px; font-weight: 700; color: #c084fc; margin-bottom: 10px; text-transform: uppercase;">🎥 INCIDENT VIDEO EVIDENCE</div>
+          <div style="border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,0.2); max-width:320px; background:#000;">
+            <video src="${e.video_url}" controls playsinline preload="metadata" style="width:100%; max-height:220px; display:block;"></video>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+            <span style="font-size:11px; color:#9ca3af;">Click play or download full video</span>
+            <a href="${e.video_url}" target="_blank" download style="font-size:11px; color:#c084fc; text-decoration:underline;">Download Video</a>
+          </div>
         </div>` : ''}
       </div>
       

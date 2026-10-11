@@ -27,6 +27,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   final _regNameController = TextEditingController();
   final _regMobileController = TextEditingController();
   final _regEnrollController = TextEditingController();
+  final _regEmailController = TextEditingController();
   final _regPwdController = TextEditingController();
   final _regConfirmPwdController = TextEditingController();
   bool _regHidePassword = true;
@@ -47,6 +48,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     _regNameController.dispose();
     _regMobileController.dispose();
     _regEnrollController.dispose();
+    _regEmailController.dispose();
     _regPwdController.dispose();
     _regConfirmPwdController.dispose();
     super.dispose();
@@ -86,6 +88,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     final name = _regNameController.text.trim();
     final mobile = _regMobileController.text.trim();
     final enroll = _regEnrollController.text.trim().toUpperCase();
+    final email = _regEmailController.text.trim().toLowerCase();
     final pwd = _regPwdController.text.trim();
     final confirmPwd = _regConfirmPwdController.text.trim();
 
@@ -99,6 +102,11 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     }
     if (!enroll.startsWith("MUR") || enroll.length < 5) {
       setState(() => _regError = "Enrollment number must start with MUR (e.g., MUR2500001).");
+      return;
+    }
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (email.isNotEmpty && !emailRegex.hasMatch(email)) {
+      setState(() => _regError = "Enter a valid university email address (e.g., student@mewaruniversity.org).");
       return;
     }
     if (pwd.length < 4) {
@@ -116,7 +124,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     });
 
     final api = Provider.of<ApiService>(context, listen: false);
-    final res = await api.register(name, mobile, enroll, pwd);
+    final res = await api.register(name, mobile, enroll, pwd, email: email.isNotEmpty ? email : null);
 
     if (!mounted) return;
     setState(() => _isRegLoading = false);
@@ -152,21 +160,23 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
               Center(
                 child: Column(
                   children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: AppColors.forestGreen,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.forestGreen.withOpacity(0.2),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Image.asset(
+                        'assets/logo.png',
+                        width: 68,
+                        height: 68,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 68,
+                          height: 68,
+                          decoration: BoxDecoration(
+                            color: AppColors.forestGreen,
+                            borderRadius: BorderRadius.circular(18),
                           ),
-                        ],
+                          child: const Icon(Icons.shield, color: AppColors.safetyOrange, size: 38),
+                        ),
                       ),
-                      child: const Icon(Icons.shield, color: AppColors.safetyOrange, size: 38),
                     ),
                     const SizedBox(height: 12),
                     const Text(
@@ -463,6 +473,16 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
               labelText: 'Enrollment Number',
               hintText: 'e.g., MUR2500001',
               prefixIcon: Icon(Icons.school_outlined, color: AppColors.forestGreen),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _regEmailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'University Email Address',
+              hintText: 'e.g., student@mewaruniversity.org (For password recovery)',
+              prefixIcon: Icon(Icons.email_outlined, color: AppColors.forestGreen),
             ),
           ),
           const SizedBox(height: 10),

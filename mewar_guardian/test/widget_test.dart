@@ -127,23 +127,23 @@ void main() {
       child: const MaterialApp(home: ForgotPasswordScreen()),
     );
 
-    testWidgets('Renders step 1 with enrollment, mobile, and send OTP button', (WidgetTester tester) async {
+    testWidgets('Renders step 1 with enrollment, email, and send recovery code button', (WidgetTester tester) async {
       await tester.pumpWidget(buildForgotPassword());
       await tester.pump();
 
       expect(find.text('Password Recovery'), findsOneWidget);
       expect(find.text('Identify Your Account'), findsOneWidget);
       expect(find.text('Enrollment Number'), findsOneWidget);
-      expect(find.text('Registered Mobile Number'), findsOneWidget);
-      expect(find.text('Send Verification OTP'), findsOneWidget);
+      expect(find.text('Registered University Email'), findsOneWidget);
+      expect(find.text('Send Recovery Code via Email'), findsOneWidget);
     });
 
     testWidgets('Validates empty inputs before sending OTP', (WidgetTester tester) async {
       await tester.pumpWidget(buildForgotPassword());
       await tester.pump();
 
-      // Tap Send OTP with empty inputs
-      await tester.tap(find.text('Send Verification OTP'));
+      // Tap Send Recovery Code with empty inputs
+      await tester.tap(find.text('Send Recovery Code via Email'));
       await tester.pump();
 
       expect(find.text('Please enter a valid university enrollment number (e.g., MUR2500001).'), findsOneWidget);

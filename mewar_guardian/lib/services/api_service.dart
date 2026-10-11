@@ -21,6 +21,7 @@ class ApiService extends ChangeNotifier {
   String studentName = "";
   String mobileNumber = "";
   String enrollmentNumber = "";
+  String studentEmail = "";
   String role = "Student";
   bool isLoggedIn = false;
 
@@ -42,6 +43,7 @@ class ApiService extends ChangeNotifier {
     studentName = prefs.getString('name') ?? '';
     mobileNumber = prefs.getString('mobile') ?? '';
     enrollmentNumber = prefs.getString('enrollment') ?? '';
+    studentEmail = prefs.getString('email') ?? '';
     role = prefs.getString('role') ?? 'Student';
     isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
@@ -65,11 +67,15 @@ class ApiService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _persistStudent(String name, String mobile, String enrollment, String roleStr) async {
+  Future<void> _persistStudent(String name, String mobile, String enrollment, String roleStr, {String? email}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('name', name);
     await prefs.setString('mobile', mobile);
     await prefs.setString('enrollment', enrollment);
+    if (email != null && email.isNotEmpty) {
+      await prefs.setString('email', email);
+      studentEmail = email;
+    }
     await prefs.setString('role', roleStr);
     await prefs.setBool('is_logged_in', true);
     studentName = name;
@@ -80,17 +86,22 @@ class ApiService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Map<String, dynamic>> register(String name, String mobile, String enrollment, String password) async {
+  Future<Map<String, dynamic>> register(String name, String mobile, String enrollment, String password, {String? email}) async {
     try {
+      final payload = <String, dynamic>{
+        "name": name.trim(),
+        "mobile": mobile.trim(),
+        "enrollment": enrollment.trim().toUpperCase(),
+        "password": password.trim(),
+      };
+      if (email != null && email.trim().isNotEmpty) {
+        payload["email"] = email.trim();
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/register'),
         headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-        body: jsonEncode({
-          "name": name.trim(),
-          "mobile": mobile.trim(),
-          "enrollment": enrollment.trim().toUpperCase(),
-          "password": password.trim(),
-        }),
+        body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
@@ -101,6 +112,7 @@ class ApiService extends ChangeNotifier {
           student['mobile_number'] ?? mobile,
           student['enrollment_number'] ?? enrollment.toUpperCase(),
           student['role'] ?? 'Student',
+          email: student['email'] ?? email,
         );
         return {"success": true, "message": body['message'] ?? 'Registered successfully'};
       } else {
@@ -130,6 +142,7 @@ class ApiService extends ChangeNotifier {
           student['mobile_number'] ?? '',
           student['enrollment_number'] ?? identifier.toUpperCase(),
           student['role'] ?? 'Student',
+          email: student['email'],
         );
         return {"success": true, "student": student};
       } else {
@@ -152,12 +165,14 @@ class ApiService extends ChangeNotifier {
     await prefs.remove('name');
     await prefs.remove('mobile');
     await prefs.remove('enrollment');
+    await prefs.remove('email');
     await prefs.remove('role');
     await prefs.setBool('is_logged_in', false);
 
     studentName = "";
     mobileNumber = "";
     enrollmentNumber = "";
+    studentEmail = "";
     role = "Student";
     isLoggedIn = false;
     notifyListeners();
@@ -173,6 +188,7 @@ class ApiService extends ChangeNotifier {
     studentName = "";
     mobileNumber = "";
     enrollmentNumber = "";
+    studentEmail = "";
     role = "Student";
     isLoggedIn = false;
     notifyListeners();
@@ -201,22 +217,27 @@ class ApiService extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> forgotPassword(String enrollment, String mobile) async {
+  Future<Map<String, dynamic>> forgotPassword(String enrollment, String email, {String? mobile}) async {
     try {
+      final payload = <String, dynamic>{
+        "enrollment": enrollment.trim().toUpperCase(),
+        "email": email.trim(),
+      };
+      if (mobile != null && mobile.trim().isNotEmpty) {
+        payload["mobile"] = mobile.trim();
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/auth/forgot-password'),
         headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-        body: jsonEncode({
-          "enrollment": enrollment.trim().toUpperCase(),
-          "mobile": mobile.trim(),
-        }),
+        body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body['success'] == true) {
         return {
           "success": true,
-          "message": body['message'] ?? 'OTP sent to registered mobile.',
+          "message": body['message'] ?? 'Password reset verification code sent to registered email.',
           "dev_otp": body['dev_otp'],
         };
       } else {
@@ -616,7 +637,71 @@ class ApiService extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>?> chatWithAi(String message, List<Map<String, String>> history, {String? photoUrl}) async {
+  Future<Map<String, dynamic>> uploadVideo(Uint8List bytes, String filename) async {
+    try {
+      // Server enforces 50MB max limit
+      if (bytes.lengthInBytes > 50 * 1024 * 1024) {
+        return {
+          "success": false,
+          "error": "Video exceeds 50MB limit (${(bytes.lengthInBytes / (1024 * 1024)).toStringAsFixed(1)}MB). Please select a shorter video.",
+        };
+      }
+
+      final uri = Uri.parse('$baseUrl/api/upload');
+      final request = http.MultipartRequest('POST', uri);
+      request.headers['ngrok-skip-browser-warning'] = 'true';
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'video',
+          bytes,
+          filename: filename,
+        ),
+      );
+
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 45));
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic> && body['success'] == true) {
+          String videoUrl = body['video_url'] ?? body['file_url'] ?? '';
+          if (videoUrl.startsWith('/')) {
+            videoUrl = '$baseUrl$videoUrl';
+          }
+          return {
+            "success": true,
+            "video_url": videoUrl,
+            "filename": body['filename'],
+          };
+        }
+      }
+      try {
+        final body = jsonDecode(response.body);
+        return {
+          "success": false,
+          "error": body['error'] ?? 'Video upload failed (Status ${response.statusCode})',
+        };
+      } catch (_) {
+        return {
+          "success": false,
+          "error": 'Video upload failed with status ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      if (kDebugMode) print('uploadVideo error: $e');
+      return {
+        "success": false,
+        "error": "Failed to upload video. Please check your connection and retry.",
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>?> chatWithAi(
+    String message,
+    List<Map<String, String>> history, {
+    String? photoUrl,
+    String? videoUrl,
+  }) async {
     try {
       final payload = <String, dynamic>{
         "message": message,
@@ -624,6 +709,9 @@ class ApiService extends ChangeNotifier {
       };
       if (photoUrl != null && photoUrl.isNotEmpty) {
         payload["photo_url"] = photoUrl;
+      }
+      if (videoUrl != null && videoUrl.isNotEmpty) {
+        payload["video_url"] = videoUrl;
       }
 
       final response = await http.post(
