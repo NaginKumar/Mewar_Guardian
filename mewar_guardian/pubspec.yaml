@@ -17,6 +17,7 @@ dependencies:
   latlong2: ^0.10.1
   connectivity_plus: ^6.0.3
   speech_to_text: ^7.5.0
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:

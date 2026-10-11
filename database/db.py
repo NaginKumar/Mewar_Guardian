@@ -9,7 +9,7 @@ from core.sms_service import send_otp_sms
 
 DB_HOST = os.getenv("MYSQL_HOST", "localhost")
 DB_USER = os.getenv("MYSQL_USER", "root")
-DB_PASS = os.getenv("MYSQL_PASS", "daksh@706079nagin")
+DB_PASS = os.getenv("MYSQL_PASS", "")
 DB_NAME = os.getenv("MYSQL_DB", "rakshak_ai")
 DB_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 
@@ -146,7 +146,8 @@ def create_database():
                 student_lon       REAL,
                 location_accuracy REAL,
                 responder_lat     REAL,
-                responder_lon     REAL
+                responder_lon     REAL,
+                photo_url         TEXT
             )
         """)
     else:
@@ -187,7 +188,8 @@ def create_database():
                 student_lon       REAL,
                 location_accuracy REAL,
                 responder_lat     REAL,
-                responder_lon     REAL
+                responder_lon     REAL,
+                photo_url         TEXT
             )
         """)
 
@@ -297,6 +299,7 @@ def add_missing_columns():
         "location_accuracy": "REAL",
         "responder_lat":     "REAL",
         "responder_lon":     "REAL",
+        "photo_url":         "TEXT",
     }
 
     for col, col_type in new_columns.items():
@@ -345,7 +348,8 @@ def add_emergency(
     enrollment_number=None,
     location_accuracy=None,
     responder_lat=None,
-    responder_lon=None
+    responder_lon=None,
+    photo_url=None
 ) -> int:
     """Insert a new emergency record and return its auto-generated ID."""
     conn = get_connection()
@@ -359,13 +363,13 @@ def add_emergency(
             student_name, mobile_number, enrollment_number, emergency_type, location, description,
             priority, time, reported_time, status, responder, distance,
             ai_confidence, risk_score, recommendation, estimated_minutes,
-            student_lat, student_lon, location_accuracy, responder_lat, responder_lon
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            student_lat, student_lon, location_accuracy, responder_lat, responder_lon, photo_url
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         student_name, mobile_number, enrollment_number, emergency_type, location, description,
         priority, now_str, now_str, "Pending", responder, distance,
         ai_confidence, risk_score, recommendation, estimated_minutes,
-        student_lat, student_lon, location_accuracy, responder_lat, responder_lon
+        student_lat, student_lon, location_accuracy, responder_lat, responder_lon, photo_url
     ))
 
     emergency_id = cursor.lastrowid
@@ -413,7 +417,7 @@ def register_student(enrollment: str, name: str, mobile: str, password: str) -> 
     if not mobile or len(mobile) != 10 or not mobile.isdigit():
         return False, "Valid 10-digit mobile number is required."
     if not enrollment or not enrollment.startswith("MUR") or len(enrollment) < 5:
-        return False, "Enrollment number must start with MUR (e.g., MUR2502331)."
+        return False, "Enrollment number must start with MUR (e.g., MUR2500001)."
     if not password or len(password) < 4:
         return False, "Password must be at least 4 characters long."
 
@@ -512,7 +516,7 @@ def get_student_emergencies(enrollment_or_mobile: str) -> list[dict]:
     try:
         cursor.execute("""
             SELECT id, emergency_type, location, description, priority, status, time,
-                   responder, estimated_minutes, recommendation
+                   responder, estimated_minutes, recommendation, photo_url
             FROM emergencies
             WHERE enrollment_number = %s OR mobile_number = %s
             ORDER BY id DESC LIMIT 50

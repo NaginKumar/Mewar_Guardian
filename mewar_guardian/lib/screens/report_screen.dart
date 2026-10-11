@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -24,31 +26,19 @@ class _ReportScreenState extends State<ReportScreen> {
   final _enrollController = TextEditingController();
   final _descController = TextEditingController();
 
-  // --- VOICE SPEECH-TO-TEXT STATE ---
+  // --- SMART AUTO-VOICE SPEECH-TO-TEXT STATE ---
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _speechInitialized = false;
   bool _isListening = false;
   bool _speechAvailable = false;
-  String _selectedLanguageCode = 'hi_IN';
   String _currentInterimWords = '';
   String? _speechError;
   List<stt.LocaleName> _deviceLocales = [];
 
-  static const List<Map<String, String>> _supportedVoiceLanguages = [
-    {'name': 'Hindi (हिन्दी)', 'code': 'hi_IN', 'native': 'हिन्दी'},
-    {'name': 'English (India)', 'code': 'en_IN', 'native': 'English (India)'},
-    {'name': 'Hinglish (Mixed)', 'code': 'hi_IN_hinglish', 'native': 'Hinglish'},
-    {'name': 'English (US)', 'code': 'en_US', 'native': 'English (US)'},
-    {'name': 'Punjabi (ਪੰਜਾਬੀ)', 'code': 'pa_IN', 'native': 'ਪੰਜਾਬੀ'},
-    {'name': 'Gujarati (ગુજરાતી)', 'code': 'gu_IN', 'native': 'ગુજરાતી'},
-    {'name': 'Bengali (বাংলা)', 'code': 'bn_IN', 'native': 'বাংলা'},
-    {'name': 'Marathi (मराठी)', 'code': 'mr_IN', 'native': 'मराठी'},
-    {'name': 'Tamil (தமிழ்)', 'code': 'ta_IN', 'native': 'தமிழ்'},
-    {'name': 'Telugu (తెలుగు)', 'code': 'te_IN', 'native': 'తెలుగు'},
-    {'name': 'Kannada (ಕನ್ನಡ)', 'code': 'kn_IN', 'native': 'ಕನ್ನಡ'},
-    {'name': 'Malayalam (മലയാളം)', 'code': 'ml_IN', 'native': 'മലയാളം'},
-    {'name': 'Urdu (اردو)', 'code': 'ur_IN', 'native': 'اردو'},
-  ];
+  // --- PHOTO EVIDENCE STATE ---
+  final ImagePicker _picker = ImagePicker();
+  Uint8List? _selectedPhotoBytes;
+  String? _selectedPhotoName;
 
   String _selectedCategory = 'Let AI Decide';
   CampusLocation _selectedLocation = CampusLocationsData.allLocations.firstWhere(
@@ -207,15 +197,24 @@ class _ReportScreenState extends State<ReportScreen> {
       return;
     }
 
-    // Match best locale
-    String targetLocale = _selectedLanguageCode == 'hi_IN_hinglish' ? 'hi_IN' : _selectedLanguageCode;
+    // Automatic Language Detection Strategy:
+    // Uses best Indian locale candidate (Hindi / English / Hinglish) or system speech recognizer
+    String? targetLocale;
     if (_deviceLocales.isNotEmpty) {
-      final searchCode = targetLocale.replaceAll('_', '-').toLowerCase();
       for (final l in _deviceLocales) {
-        final locCode = l.localeId.replaceAll('_', '-').toLowerCase();
-        if (locCode == searchCode || locCode.startsWith(searchCode.split('-')[0])) {
+        final id = l.localeId.toLowerCase();
+        if (id.contains('hi_in') || id.contains('hi-in')) {
           targetLocale = l.localeId;
           break;
+        }
+      }
+      if (targetLocale == null) {
+        for (final l in _deviceLocales) {
+          final id = l.localeId.toLowerCase();
+          if (id.contains('en_in') || id.contains('en-in')) {
+            targetLocale = l.localeId;
+            break;
+          }
         }
       }
     }
@@ -330,6 +329,104 @@ class _ReportScreenState extends State<ReportScreen> {
         ],
       ),
     );
+  }
+
+  // --- PHOTO EVIDENCE HELPERS ---
+  Future<void> _pickPhoto(ImageSource source) async {
+    try {
+      final XFile? file = await _picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+      );
+      if (file != null) {
+        final bytes = await file.readAsBytes();
+        setState(() {
+          _selectedPhotoBytes = bytes;
+          _selectedPhotoName = file.name;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Could not access photo: $e"),
+            backgroundColor: AppColors.criticalRed,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showPhotoSourcePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "Attach Emergency Photo Evidence",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                "Attached photo will be sent directly to Campus Security response team.",
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
+                  child: const Icon(Icons.photo_camera_rounded, color: AppColors.forestGreen),
+                ),
+                title: const Text("Take Photo with Camera", style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text("Capture live incident scene", style: TextStyle(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickPhoto(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
+                  child: const Icon(Icons.photo_library_rounded, color: AppColors.forestGreen),
+                ),
+                title: const Text("Choose from Gallery", style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text("Select image from your device", style: TextStyle(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickPhoto(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _removeSelectedPhoto() {
+    setState(() {
+      _selectedPhotoBytes = null;
+      _selectedPhotoName = null;
+    });
   }
 
   // --- MANUAL LOCATION SELECTOR MODAL ---
@@ -625,6 +722,18 @@ class _ReportScreenState extends State<ReportScreen> {
     // Save profile updates to memory/prefs
     api.saveProfile(name, mobile, enroll);
 
+    String? photoUrl;
+    if (_selectedPhotoBytes != null) {
+      try {
+        final uploadRes = await api.uploadImage(_selectedPhotoBytes!, _selectedPhotoName ?? 'incident_evidence.jpg');
+        if (uploadRes['success'] == true) {
+          photoUrl = uploadRes['photo_url'];
+        }
+      } catch (e) {
+        // Continue emergency transmission even if image upload encountered an error
+      }
+    }
+
     final Map<String, dynamic> payload = {
       "student_name": name,
       "mobile_number": mobile,
@@ -633,6 +742,10 @@ class _ReportScreenState extends State<ReportScreen> {
       "description": desc,
       "location": _selectedLocation.name,
     };
+
+    if (photoUrl != null && photoUrl.isNotEmpty) {
+      payload["photo_url"] = photoUrl;
+    }
 
     if (_gpsPosition != null) {
       payload["student_lat"] = _gpsPosition!.latitude;
@@ -659,6 +772,7 @@ class _ReportScreenState extends State<ReportScreen> {
         'student_name': name,
         'mobile_number': mobile,
         'description': desc,
+        'photo_url': photoUrl ?? result['photo_url'],
         'time': DateTime.now().toString().split('.').first,
         'recommendation': result['recommendation'] ?? '',
       };
@@ -745,7 +859,7 @@ class _ReportScreenState extends State<ReportScreen> {
                 children: [
                   Text("IMMEDIATE ASSISTANCE:", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textMuted)),
                   SizedBox(height: 4),
-                  Text("Call Campus Security: 8076731005", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.forestGreen)),
+                  Text("Call Campus Security: 01477-229900", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.forestGreen)),
                   Text("Police Control: 112 | Ambulance: 108", style: TextStyle(fontSize: 12, color: AppColors.charcoal)),
                 ],
               ),
@@ -1035,8 +1149,103 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 4. STUDENT IDENTITY
-                  _buildSectionHeader("4. STUDENT INFORMATION"),
+                  // 4. PHOTO EVIDENCE (OPTIONAL)
+                  _buildSectionHeader("4. PHOTO EVIDENCE (OPTIONAL)"),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: _selectedPhotoBytes == null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Attach a photo of the incident scene to help campus security and responders.",
+                                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        side: const BorderSide(color: AppColors.forestGreen),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      icon: const Icon(Icons.camera_alt, color: AppColors.forestGreen, size: 20),
+                                      label: const Text("Take Photo", style: TextStyle(color: AppColors.forestGreen, fontWeight: FontWeight.bold)),
+                                      onPressed: () => _pickPhoto(ImageSource.camera),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        side: const BorderSide(color: AppColors.forestGreen),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      icon: const Icon(Icons.photo_library, color: AppColors.forestGreen, size: 20),
+                                      label: const Text("Gallery", style: TextStyle(color: AppColors.forestGreen, fontWeight: FontWeight.bold)),
+                                      onPressed: () => _pickPhoto(ImageSource.gallery),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.memory(
+                                  _selectedPhotoBytes!,
+                                  width: 64,
+                                  height: 64,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _selectedPhotoName ?? "Incident Photo",
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      "Will be attached to security record",
+                                      style: TextStyle(fontSize: 11, color: AppColors.successGreen, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, color: AppColors.forestGreen),
+                                tooltip: "Change Photo",
+                                onPressed: _showPhotoSourcePicker,
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, color: AppColors.criticalRed),
+                                tooltip: "Remove Photo",
+                                onPressed: _removeSelectedPhoto,
+                              ),
+                            ],
+                          ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // 5. STUDENT IDENTITY
+                  _buildSectionHeader("5. STUDENT INFORMATION"),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -1123,11 +1332,6 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 
   Widget _buildVoiceControlsSection() {
-    final activeLang = _supportedVoiceLanguages.firstWhere(
-      (l) => l['code'] == _selectedLanguageCode,
-      orElse: () => _supportedVoiceLanguages.first,
-    );
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1140,53 +1344,26 @@ class _ReportScreenState extends State<ReportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Language Selector Bar
-          Row(
-            children: [
-              const Icon(Icons.language, size: 16, color: AppColors.forestGreen),
-              const SizedBox(width: 6),
-              const Text(
-                "Voice Language:",
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.forestGreen),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedLanguageCode,
-                      isDense: true,
-                      isExpanded: true,
-                      icon: const Icon(Icons.arrow_drop_down, color: AppColors.forestGreen, size: 20),
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.charcoal),
-                      onChanged: _isListening
-                          ? null
-                          : (newCode) {
-                              if (newCode != null) {
-                                setState(() => _selectedLanguageCode = newCode);
-                              }
-                            },
-                      items: _supportedVoiceLanguages.map((lang) {
-                        return DropdownMenuItem<String>(
-                          value: lang['code'],
-                          child: Text(
-                            lang['name']!,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                    ),
+          // Smart Auto Voice Detection Banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.auto_awesome, size: 16, color: AppColors.forestGreen),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "Smart Voice • Auto-Detects Hindi, English & Hinglish",
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.forestGreen),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
 
           const SizedBox(height: 10),
@@ -1203,9 +1380,9 @@ class _ReportScreenState extends State<ReportScreen> {
                   elevation: 1,
                 ),
                 icon: const Icon(Icons.mic, size: 20, color: Colors.white),
-                label: Text(
-                  "Speak to Describe (${activeLang['native']})",
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
+                label: const Text(
+                  "Describe by Voice (Tap to Speak)",
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
                 ),
                 onPressed: _startListening,
               ),
@@ -1256,9 +1433,9 @@ class _ReportScreenState extends State<ReportScreen> {
                               ],
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              "Speak your emergency description in ${activeLang['name']}",
-                              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                            const Text(
+                              "Speak naturally in Hindi, English, or Hinglish",
+                              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
                             ),
                           ],
                         ),

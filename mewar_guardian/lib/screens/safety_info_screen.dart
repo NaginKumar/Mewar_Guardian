@@ -119,7 +119,7 @@ class SafetyInfoScreen extends StatelessWidget {
             const SizedBox(height: 12),
             Wrap(
               children: [
-                _buildContactCard("CAMPUS SECURITY", "+91 8076731005", isPhone: true),
+                _buildContactCard("CAMPUS SECURITY", "+91 1477 229900", isPhone: true),
                 _buildContactCard("CAMPUS HOSPITAL", "Health Center", isPhone: false),
                 _buildContactCard("POLICE CONTROL", "112", isPhone: true),
                 _buildContactCard("AMBULANCE", "108", isPhone: true),

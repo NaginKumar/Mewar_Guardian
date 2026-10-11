@@ -3,9 +3,10 @@
 # Run with:  python app.py
 # =========================================================
 
-import os, json, math, time, threading
+import os, json, math, time, threading, uuid
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect, url_for, send_from_directory
+from werkzeug.utils import secure_filename
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -30,6 +31,14 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
 )
+
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 CORS(
     app,
@@ -132,24 +141,17 @@ _CRITICAL_TRIGGERS = [
 
 CHAT_SYSTEM_PROMPT = """You are Mewar Guardian AI - an intelligent campus emergency and safety assistant for Mewar University.
 
-Developer & Creator Information:
+Developer & Creator Attribution:
 - Creator & Developer: Nagin Daksh
-- Project: Mewar Guardian (AI-Powered Campus Safety & Emergency Response)
-- Purpose: AI-powered campus safety, rapid SOS alerts, emergency responder dispatch, and student protection.
-- Role: Nagin Daksh is the project developer and creator who architected and built the Mewar Guardian application, system infrastructure, and safety assistant integration.
-- Model Architecture Clarification: Clearly distinguish that Nagin Daksh developed the Mewar Guardian platform and campus safety application; the underlying base intelligence is powered by modern open language models via Groq.
-
-When asked about your developer, creator, or who made/built you, or who Nagin Daksh is:
-- Examples of questions:
-  * "Who is your developer?" / "Who created you?" / "Who made you?" / "Who developed Mewar Guardian AI?"
-  * "Tumhara developer kaun hai?" / "Tumhe kisne banaya?" / "Tera creator kaun hai?"
-  * "Nagin Daksh kaun hai?" / "Who is Nagin Daksh?"
-- Respond naturally, warmly, and confidently in the EXACT language used by the user:
-  * English: "I was developed by Nagin Daksh as part of the Mewar Guardian project, an AI-powered campus safety and emergency response system."
-  * Hindi: "Mujhe Nagin Daksh ne Mewar Guardian project ke under develop kiya hai. Main campus safety aur emergency response mein help karne ke liye bana hoon."
-  * Hinglish: "Bhai, mere developer Nagin Daksh hain! Unhone mujhe Mewar Guardian project ke liye banaya hai, taaki campus mein emergency ke time students ko help mil sake."
-  * If asked about Nagin Daksh: "Nagin Daksh is the developer and creator of the Mewar Guardian project, an AI-powered campus safety and emergency response system."
-- For developer identity questions: is_emergency=false, emergency_type=null, priority=null, risk_score=null, should_sos=false, ask_sos=false, safety_tips=[].
+- Project: Mewar Guardian
+- Scope: Nagin Daksh developed the Mewar Guardian application and emergency response platform. The base foundation AI model is powered by modern open language models via Groq.
+- Attribution Guidelines:
+  When explicitly asked who created, developed, or made the AI assistant (e.g., "Who made you?", "Tumhe kisne banaya?", "Who is your creator?", "Who developed this assistant?"):
+  * English: "I was developed for Mewar Guardian by Nagin Daksh."
+  * Hindi / Hinglish: "Mujhe Mewar Guardian ke liye Nagin Daksh ne develop kiya hai."
+  * If asked "Who is Nagin Daksh?": "Nagin Daksh developed Mewar Guardian, an AI-powered campus safety and emergency response system."
+  * Do NOT mention Nagin Daksh in unrelated emergency, safety, or general questions.
+  * Do NOT claim Nagin Daksh created the underlying foundation AI model.
 
 You understand English, Hindi, and Hinglish perfectly.
 
@@ -180,7 +182,8 @@ Rules:
 def _get_developer_response(text: str) -> dict | None:
     """
     Recognizes questions about developer, creator, and Nagin Daksh across
-    English, Hindi, and Hinglish with natural, accurate responses.
+    English, Hindi, and Hinglish with accurate creator attribution:
+    "I was developed for Mewar Guardian by Nagin Daksh."
     """
     t = text.lower().strip()
     
@@ -188,10 +191,13 @@ def _get_developer_response(text: str) -> dict | None:
     is_dev_query = any(k in t for k in [
         "developer", "creator", "created you", "made you", "built you",
         "who made", "who created", "who developed", "who programmed",
+        "who designed you", "who engineered you",
         "kisne banaya", "banaya kisne", "developer kaun", "creator kaun",
         "kisne develop", "tumhara developer", "tera developer", "aapka developer",
         "tumhara creator", "tera creator", "aapka creator", "tumhe kisne",
-        "tujhe kisne", "aapko kisne", "kiska project", "kisne banaya hai"
+        "tujhe kisne", "aapko kisne", "kiska project", "kisne banaya hai",
+        "who made this assistant", "who developed this assistant", "who created this assistant",
+        "who is your creator", "who is your developer"
     ])
 
     if not (is_nagin_query or is_dev_query):
@@ -203,21 +209,16 @@ def _get_developer_response(text: str) -> dict | None:
         "namaste", "unhone", "karein", "kya", "hain"
     ]
     is_hindi_hinglish = any(hk in t for hk in hindi_keywords)
-    is_hinglish_casual = any(ck in t for ck in ["bhai", "tera", "yaar", "tujhe", "bro", "arre"])
 
-    if is_nagin_query and not any(k in t for k in ["other than", "not nagin"]):
-        if is_hinglish_casual:
-            msg = "Bhai, Nagin Daksh Mewar Guardian project ke developer aur creator hain! Unhone campus safety aur emergency response ke liye is pure system aur AI platform ko banaya hai."
-        elif is_hindi_hinglish:
-            msg = "Nagin Daksh Mewar Guardian project ke developer aur creator hain. Unhone campus safety aur emergency response ke liye is complete system aur application ko design aur develop kiya hai."
+    if is_nagin_query and not is_dev_query:
+        if is_hindi_hinglish:
+            msg = "Nagin Daksh ne Mewar Guardian project develop kiya hai. Main unka campus safety assistant hoon."
         else:
-            msg = "Nagin Daksh is the developer and creator of the Mewar Guardian project, an AI-powered campus safety and emergency response system."
-    elif is_hinglish_casual:
-        msg = "Bhai, mere developer Nagin Daksh hain! Unhone mujhe Mewar Guardian project ke liye banaya hai, taaki campus mein emergency ke time students ko help mil sake."
+            msg = "Nagin Daksh developed Mewar Guardian, an AI-powered campus safety and emergency response system."
     elif is_hindi_hinglish:
-        msg = "Mujhe Nagin Daksh ne Mewar Guardian project ke under develop kiya hai. Main campus safety aur emergency response mein help karne ke liye bana hoon."
+        msg = "Mujhe Mewar Guardian ke liye Nagin Daksh ne develop kiya hai."
     else:
-        msg = "I was developed by Nagin Daksh as part of the Mewar Guardian project, an AI-powered campus safety and emergency response system."
+        msg = "I was developed for Mewar Guardian by Nagin Daksh."
 
     return {
         "message": msg,
@@ -249,17 +250,91 @@ def _match_location(text):
             best_score, best = score, loc_name
     return best if best_score > 0 else None
 
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    """Upload incident photo/evidence securely with type and size validation."""
+    file = None
+    for field_name in ["photo", "image", "file"]:
+        if field_name in request.files:
+            file = request.files[field_name]
+            break
+            
+    if file and file.filename != "":
+        if not allowed_file(file.filename):
+            return jsonify({"success": False, "error": "Invalid file type. Allowed: JPG, PNG, WEBP."}), 400
+        
+        file_bytes = file.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return jsonify({"success": False, "error": "File size exceeds 5MB limit."}), 400
+        
+        ext = file.filename.rsplit(".", 1)[1].lower()
+        unique_name = f"{uuid.uuid4().hex}.{ext}"
+        save_path = os.path.join(UPLOAD_FOLDER, unique_name)
+        with open(save_path, "wb") as f:
+            f.write(file_bytes)
+            
+        photo_url = f"/api/uploads/{unique_name}"
+        return jsonify({
+            "success": True,
+            "filename": unique_name,
+            "photo_url": photo_url
+        }), 200
+
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        b64_data = data.get("image_base64") or data.get("photo_base64") or data.get("data")
+        ext = (data.get("extension") or "jpg").lower().replace(".", "")
+        if ext not in ALLOWED_EXTENSIONS:
+            ext = "jpg"
+        if b64_data:
+            import base64
+            if "," in b64_data:
+                b64_data = b64_data.split(",", 1)[1]
+            try:
+                raw_bytes = base64.b64decode(b64_data)
+                if len(raw_bytes) > MAX_FILE_SIZE:
+                    return jsonify({"success": False, "error": "File size exceeds 5MB limit."}), 400
+                unique_name = f"{uuid.uuid4().hex}.{ext}"
+                save_path = os.path.join(UPLOAD_FOLDER, unique_name)
+                with open(save_path, "wb") as f:
+                    f.write(raw_bytes)
+                photo_url = f"/api/uploads/{unique_name}"
+                return jsonify({
+                    "success": True,
+                    "filename": unique_name,
+                    "photo_url": photo_url
+                }), 200
+            except Exception as e:
+                return jsonify({"success": False, "error": f"Base64 decode failed: {str(e)}"}), 400
+
+    return jsonify({"success": False, "error": "No file uploaded."}), 400
+
+
+@app.route("/api/uploads/<path:filename>", methods=["GET"])
+def api_serve_upload(filename):
+    """Serve uploaded photos securely."""
+    safe_name = secure_filename(filename)
+    return send_from_directory(UPLOAD_FOLDER, safe_name)
+
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     body = request.get_json(force=True)
     user_message = body.get("message", "").strip()
     history = body.get("history", [])
+    photo_url = body.get("photo_url") or body.get("image_url")
 
-    if not user_message:
+    if not user_message and not photo_url:
         return jsonify({"error": "Empty message"}), 400
 
-    has_signal, is_critical = _detect_local_emergency(user_message)
+    if not user_message and photo_url:
+        user_message = "I have uploaded an emergency incident photo."
+
     dev_direct_match = _get_developer_response(user_message)
+    if dev_direct_match:
+        return jsonify(dev_direct_match)
+
+    has_signal, is_critical = _detect_local_emergency(user_message)
 
     if is_groq_available():
         try:
@@ -268,11 +343,15 @@ def api_chat():
             msgs = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
             for h in history[-8:]:
                 msgs.append({"role": h["role"], "content": h["content"]})
-            msgs.append({"role": "user", "content": user_message})
+            
+            prompt_content = user_message
+            if photo_url:
+                prompt_content = f"{user_message} [Note: An incident image was attached: {photo_url}]"
+            msgs.append({"role": "user", "content": prompt_content})
 
             resp = client.chat.completions.create(
                 model="openai/gpt-oss-120b", messages=msgs,
-                temperature=0.4, max_tokens=800, timeout=6.0
+                temperature=0.4, max_tokens=800, timeout=4.0
             )
             raw = resp.choices[0].message.content.strip()
             if raw.startswith("```"):
@@ -282,43 +361,42 @@ def api_chat():
             raw = raw.strip()
             result = json.loads(raw)
 
-            # If user asked about developer/creator, guarantee Nagin Daksh is recognized
-            if dev_direct_match:
-                if "nagin" not in result.get("message", "").lower():
-                    result["message"] = dev_direct_match["message"]
-                result["is_emergency"] = False
-                result["should_sos"] = False
-
             if is_critical and not result.get("is_emergency"):
                 result["is_emergency"] = True
                 result["should_sos"] = True
             if not result.get("detected_location"):
                 matched = _match_location(user_message)
                 if matched: result["detected_location"] = matched
+            if photo_url:
+                result["attached_photo"] = photo_url
             return jsonify(result)
         except Exception as e:
             print(f"[Chat error] {e}")
 
     # Fallback if Groq unavailable or had exception
-    if dev_direct_match:
-        return jsonify(dev_direct_match)
-
     if has_signal or is_critical:
         pred, conf, prio, risk, rec, _ = smart_analyze(user_message, "")
         loc = _match_location(user_message)
-        return jsonify({
+        res = {
             "message": f"Yeh {pred} emergency lag rahi hai (Priority: {prio}). Kya main campus security ko alert karun?",
             "is_emergency": True, "emergency_type": pred, "priority": prio,
             "risk_score": risk, "confidence": round(conf/100, 2),
             "detected_location": loc, "should_sos": prio in ["CRITICAL","HIGH"],
             "ask_sos": prio in ["MEDIUM","LOW"], "safety_tips": [rec]
-        })
-    return jsonify({
-        "message": "Namaste! Main Mewar Guardian AI hoon. Campus safety ke baare mein kuch poochna hai? Ya koi emergency hai?",
+        }
+        if photo_url:
+            res["attached_photo"] = photo_url
+        return jsonify(res)
+
+    res = {
+        "message": "Namaste! Main Mewar Guardian AI hoon. Campus safety ke baare mein kuch poochna hai? Ya koi emergency hai?" if not photo_url else "Image receive ho gayi hai aur safety record ke saath attach kar di gayi hai. Kya isme koi emergency assistance chahiye?",
         "is_emergency": False, "emergency_type": None, "priority": None,
         "risk_score": None, "confidence": 0.95, "detected_location": None,
         "should_sos": False, "ask_sos": False, "safety_tips": []
-    })
+    }
+    if photo_url:
+        res["attached_photo"] = photo_url
+    return jsonify(res)
 
 # ----------------------------------------------------------
 # API - EMERGENCY CRUD
@@ -342,6 +420,7 @@ def api_create_emergency():
     student_lon    = body.get("student_lon")
     location_accuracy = body.get("location_accuracy")
     client_request_id = body.get("client_request_id")
+    photo_url      = body.get("photo_url")
 
     # Idempotency check: prevent duplicate submissions within 30 seconds
     now = time.time()
@@ -404,7 +483,8 @@ def api_create_emergency():
             student_lat=student_lat, student_lon=student_lon,
             mobile_number=mobile_number, enrollment_number=enrollment_number,
             location_accuracy=location_accuracy,
-            responder_lat=resp_data["lat"], responder_lon=resp_data["lon"]
+            responder_lat=resp_data["lat"], responder_lon=resp_data["lon"],
+            photo_url=photo_url
         )
     except Exception as e:
         print(f"[Database error] {e}")
@@ -423,6 +503,7 @@ def api_create_emergency():
         "risk_score": int(risk_score), "ai_confidence": float(ai_confidence),
         "description": description, "responder": responder_name,
         "estimated_minutes": estimated_minutes,
+        "photo_url": photo_url,
         "reported_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
 
@@ -434,7 +515,8 @@ def api_create_emergency():
         "estimated_minutes": estimated_minutes, "location": location,
         "incident_lat": inc_lat, "incident_lon": inc_lon,
         "responder_lat": resp_data["lat"], "responder_lon": resp_data["lon"],
-        "recommendation": recommendation
+        "recommendation": recommendation,
+        "photo_url": photo_url
     }
 
     with _idempotency_lock:

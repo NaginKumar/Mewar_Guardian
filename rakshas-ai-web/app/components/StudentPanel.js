@@ -8,8 +8,8 @@ export default function StudentPanel({ activeAlert, onSendSOS, messages, respond
   const [category, setCategory] = useState('Physical Threat / Stalking');
   const [location, setLocation] = useState('Hostel Block C (Near Entrance)');
   const [description, setDescription] = useState('');
-  const [studentName, setStudentName] = useState('Rohan Sharma');
-  const [studentPhone, setStudentPhone] = useState('+91-98765-43210');
+  const [studentName, setStudentName] = useState('Aarav Sharma (DEMO ONLY)');
+  const [studentPhone, setStudentPhone] = useState('9000000001');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const categories = [

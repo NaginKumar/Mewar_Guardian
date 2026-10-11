@@ -87,12 +87,16 @@ void main() {
       }
     });
 
-    testWidgets('Renders voice input button and language selector', (WidgetTester tester) async {
+    testWidgets('Renders smart auto-voice input and photo evidence section', (WidgetTester tester) async {
       await tester.pumpWidget(buildReportWithCat(null));
       await tester.pump();
-      await tester.scrollUntilVisible(find.textContaining('Speak to Describe'), 300);
-      expect(find.textContaining('Speak to Describe'), findsOneWidget);
-      expect(find.text('Voice Language:'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.textContaining('Describe by Voice'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.textContaining('Describe by Voice'), findsOneWidget);
+      expect(find.textContaining('Smart Voice • Auto-Detects'), findsOneWidget);
     });
   });
 
@@ -142,7 +146,7 @@ void main() {
       await tester.tap(find.text('Send Verification OTP'));
       await tester.pump();
 
-      expect(find.text('Please enter a valid university enrollment number (e.g., MUR2502331).'), findsOneWidget);
+      expect(find.text('Please enter a valid university enrollment number (e.g., DEMO2500001).'), findsOneWidget);
     });
   });
 
@@ -187,8 +191,8 @@ void main() {
             'responder': 'Medical Team',
             'estimated_minutes': 5,
             'priority': 'HIGH',
-            'student_name': 'Test Student',
-            'mobile_number': '9876543210',
+            'student_name': 'Aarav Sharma',
+            'mobile_number': '9000000001',
             'description': 'Test emergency',
             'time': '2026-01-01 12:00:00',
             'recommendation': 'Stay calm.',
@@ -212,11 +216,11 @@ void main() {
       child: const MaterialApp(home: AiChatScreen()),
     );
 
-    testWidgets('Renders Mewar Guardian AI Chat title and initial greeting with developer credit', (WidgetTester tester) async {
+    testWidgets('Renders Mewar Guardian AI Chat title and initial greeting', (WidgetTester tester) async {
       await tester.pumpWidget(buildChat());
       await tester.pump();
       expect(find.text('Mewar Guardian AI Chat'), findsOneWidget);
-      expect(find.textContaining('Developed by Nagin Daksh'), findsOneWidget);
+      expect(find.textContaining('Main Mewar Guardian AI hoon'), findsOneWidget);
     });
   });
 }

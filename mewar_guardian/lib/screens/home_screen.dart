@@ -514,7 +514,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 SizedBox(height: 2),
                 Text(
-                  "Direct line: +91 8076731005 (Mewar Security)",
+                  "Direct line: +91 1477-229900 (Mewar Security)",
                   style: TextStyle(color: AppColors.mutedSage, fontSize: 11),
                 ),
               ],

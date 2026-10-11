@@ -439,6 +439,7 @@ function renderEmgCard(e) {
       <div class="emg-card-badges">
         <span class="badge badge-${p}">${e.priority || "LOW"}</span>
         <span class="badge badge-${stCls}">${e.status}</span>
+        ${e.photo_url ? `<span class="badge" style="background:rgba(56,189,248,0.2); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">📷 Photo</span>` : ''}
       </div>
       <div class="emg-card-loc">\ud83d\udccd ${e.location || "-"}</div>
       <div class="emg-card-student" style="display:flex; flex-direction:column; gap:2px; margin-top:8px;">
@@ -548,6 +549,15 @@ function renderDetail(e) {
             <div><span style="color:var(--text3); font-size: 12px;">Status:</span> <br><span class="badge badge-${stCls}">${e.status}</span></div>
           </div>
         </div>
+
+        ${e.photo_url ? `
+        <div style="margin-top: 16px; background: rgba(56,189,248,0.06); padding: 16px; border-radius: 12px; border: 1px solid rgba(56,189,248,0.25);">
+          <div style="font-size: 13px; font-weight: 700; color: #38bdf8; margin-bottom: 10px; text-transform: uppercase;">📸 INCIDENT PHOTO EVIDENCE</div>
+          <a href="${e.photo_url}" target="_blank" rel="noopener noreferrer" style="display:block; border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,0.2); max-width:280px;">
+            <img src="${e.photo_url}" alt="Incident Photo" style="width:100%; max-height:220px; object-fit:cover; display:block; cursor:pointer;" title="Click to view full image" />
+          </a>
+          <div style="font-size:11px; color:#9ca3af; margin-top:6px;">Click photo to open full resolution</div>
+        </div>` : ''}
       </div>
       
     </div>

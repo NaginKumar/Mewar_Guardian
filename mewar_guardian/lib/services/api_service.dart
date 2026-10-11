@@ -563,15 +563,74 @@ class ApiService extends ChangeNotifier {
     return null;
   }
 
-  Future<Map<String, dynamic>?> chatWithAi(String message, List<Map<String, String>> history) async {
+  Future<Map<String, dynamic>> uploadImage(Uint8List bytes, String filename) async {
     try {
+      final uri = Uri.parse('$baseUrl/api/upload');
+      final request = http.MultipartRequest('POST', uri);
+      request.headers['ngrok-skip-browser-warning'] = 'true';
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'photo',
+          bytes,
+          filename: filename,
+        ),
+      );
+
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 15));
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic> && body['success'] == true) {
+          String photoUrl = body['photo_url'] ?? '';
+          if (photoUrl.startsWith('/')) {
+            photoUrl = '$baseUrl$photoUrl';
+          }
+          return {
+            "success": true,
+            "photo_url": photoUrl,
+            "filename": body['filename'],
+          };
+        }
+      }
+      try {
+        final body = jsonDecode(response.body);
+        return {
+          "success": false,
+          "error": body['error'] ?? 'Upload failed (Status ${response.statusCode})',
+        };
+      } catch (_) {
+        return {
+          "success": false,
+          "error": 'Upload failed with status ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      if (kDebugMode) print('uploadImage error: $e');
+      return {
+        "success": false,
+        "error": "Failed to upload image. Please check network connection.",
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>?> chatWithAi(String message, List<Map<String, String>> history, {String? photoUrl}) async {
+    try {
+      final payload = <String, dynamic>{
+        "message": message,
+        "history": history,
+      };
+      if (photoUrl != null && photoUrl.isNotEmpty) {
+        payload["photo_url"] = photoUrl;
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/chat'),
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-        body: jsonEncode({"message": message, "history": history}),
+        body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {

@@ -21,3 +21,7 @@ mewar_guardian/.flutter-plugins-dependencies
 *.db
 *.sqlite
 *.sqlite3
+uploads/
+mewar_guardian/android/build/
+mewar_guardian/android/.gradle/
+

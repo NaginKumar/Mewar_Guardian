@@ -337,7 +337,7 @@ function confirmSOS() {
   }
   if (!enrollment) { showToast("\u274c","Enter your enrollment number in Home tab.","critical"); return; }
   if (!/^MUR\d{7,10}$/i.test(enrollment)) {
-    showToast("\u274c Invalid Enrollment", "Enrollment must be 'MUR' followed by 7-10 digits (e.g., MUR2502331).", "critical");
+    showToast("❌ Invalid Enrollment", "Enrollment must be 'MUR' followed by 7-10 digits (e.g., MUR2500001).", "critical");
     return;
   }
 
@@ -395,7 +395,7 @@ function triggerManualSOS() {
   }
   if (!enrollment) { showToast("\u274c","Enter your enrollment number in Home tab.","critical"); return; }
   if (!/^MUR\d{7,10}$/i.test(enrollment)) {
-    showToast("\u274c Invalid Enrollment", "Enrollment must be 'MUR' followed by 7-10 digits (e.g., MUR2502331).", "critical");
+    showToast("❌ Invalid Enrollment", "Enrollment must be 'MUR' followed by 7-10 digits (e.g., MUR2500001).", "critical");
     return;
   }
   const selChat = document.getElementById("location-select");
@@ -533,7 +533,7 @@ function submitReport() {
   }
   if (!enrollment) { showToast("\u274c","Enter your enrollment number.","critical"); return; }
   if (!/^MUR\d{7,10}$/i.test(enrollment)) {
-    showToast("\u274c Invalid Enrollment", "Enrollment must be 'MUR' followed by 7-10 digits (e.g., MUR2502331).", "critical");
+    showToast("❌ Invalid Enrollment", "Enrollment must be 'MUR' followed by 7-10 digits (e.g., MUR2500001).", "critical");
     return;
   }
   if (!desc) { showToast("\u274c","Describe the emergency.","critical"); return; }

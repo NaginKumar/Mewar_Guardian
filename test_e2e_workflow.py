@@ -32,9 +32,9 @@ def test_backend_e2e():
     # 3. Emergency Submission with Manual Campus Location
     print("\n[TEST 3] Submitting SOS with Manual Campus Location ('Engineering Block')...")
     payload1 = {
-        "student_name": "Test Student Verification",
-        "mobile_number": "8076731005",
-        "enrollment_number": "MUR2502331",
+        "student_name": "Aarav Sharma (DEMO ONLY)",
+        "mobile_number": "9000000001",
+        "enrollment_number": "DEMO2500001",
         "emergency_type": "Fire",
         "description": "Dense smoke near lab exit on ground floor",
         "location": "Engineering Block",
@@ -54,7 +54,7 @@ def test_backend_e2e():
     print(f"\n[TEST 4] Verifying MySQL Database Persistence for Emergency #{eid1}...")
     db_row = get_emergency_by_id(eid1)
     assert db_row is not None, f"Emergency #{eid1} not found in database!"
-    assert db_row.get("student_name") == "Test Student Verification"
+    assert db_row.get("student_name") == "Aarav Sharma (DEMO ONLY)"
     assert db_row.get("location") == "Engineering Block"
     assert db_row.get("emergency_type") == "Fire"
     print(f"  -> PASSED: Emergency #{eid1} successfully verified in MySQL database.")
@@ -70,9 +70,9 @@ def test_backend_e2e():
     # 6. Emergency Submission with GPS Coordinates
     print("\n[TEST 6] Submitting SOS with GPS Coordinates...")
     payload2 = {
-        "student_name": "Test Student Verification",
-        "mobile_number": "8076731005",
-        "enrollment_number": "MUR2502331",
+        "student_name": "Aarav Sharma (DEMO ONLY)",
+        "mobile_number": "9000000001",
+        "enrollment_number": "DEMO2500001",
         "emergency_type": "Medical Emergency",
         "description": "Student fainted near sports field",
         "location": "Football Ground",

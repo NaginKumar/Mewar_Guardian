@@ -98,7 +98,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
       return;
     }
     if (!enroll.startsWith("MUR") || enroll.length < 5) {
-      setState(() => _regError = "Enrollment number must start with MUR (e.g., MUR2502331).");
+      setState(() => _regError = "Enrollment number must start with MUR (e.g., MUR2500001).");
       return;
     }
     if (pwd.length < 4) {
@@ -333,7 +333,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _loginIdController,
             decoration: const InputDecoration(
               labelText: 'Enrollment Number / Mobile',
-              hintText: 'e.g., MUR2502331 or 8076731005',
+              hintText: 'e.g., DEMO2500001 or 9000000001',
               prefixIcon: Icon(Icons.badge_outlined, color: AppColors.forestGreen),
             ),
           ),
@@ -442,7 +442,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _regNameController,
             decoration: const InputDecoration(
               labelText: 'Full Name',
-              hintText: 'e.g., Nagin Daksh',
+              hintText: 'e.g., Aarav Sharma',
               prefixIcon: Icon(Icons.person_outline, color: AppColors.forestGreen),
             ),
           ),
@@ -452,7 +452,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             keyboardType: TextInputType.phone,
             decoration: const InputDecoration(
               labelText: 'Mobile Number',
-              hintText: '10-digit number (e.g., 8076731005)',
+              hintText: '10-digit number (e.g., 9000000001)',
               prefixIcon: Icon(Icons.phone_android, color: AppColors.forestGreen),
             ),
           ),
@@ -461,7 +461,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _regEnrollController,
             decoration: const InputDecoration(
               labelText: 'Enrollment Number',
-              hintText: 'e.g., MUR2502331',
+              hintText: 'e.g., DEMO2500001',
               prefixIcon: Icon(Icons.school_outlined, color: AppColors.forestGreen),
             ),
           ),

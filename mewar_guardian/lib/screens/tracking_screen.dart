@@ -413,6 +413,43 @@ class _TrackingScreenState extends State<TrackingScreen> {
                 ],
               ),
             ),
+            if (_data?['photo_url'] != null && _data!['photo_url'].toString().isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.photo_camera_outlined, color: AppColors.forestGreen, size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          "ATTACHED INCIDENT EVIDENCE",
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        _data!['photo_url'].toString(),
+                        width: double.infinity,
+                        height: 180,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Text("Attached photo uploaded to safety records.", style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             if (recommendation.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -465,7 +502,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('📞 Calling Campus Security Dispatch: 8076731005'),
+                      content: Text('📞 Calling Campus Security Dispatch: 01477-229900'),
                       backgroundColor: AppColors.forestGreen,
                     ),
                   );
