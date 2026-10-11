@@ -333,7 +333,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _loginIdController,
             decoration: const InputDecoration(
               labelText: 'Enrollment Number / Mobile',
-              hintText: 'e.g., DEMO2500001 or 9000000001',
+              hintText: 'e.g., MUR2500001 or 9000000001',
               prefixIcon: Icon(Icons.badge_outlined, color: AppColors.forestGreen),
             ),
           ),
@@ -461,7 +461,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _regEnrollController,
             decoration: const InputDecoration(
               labelText: 'Enrollment Number',
-              hintText: 'e.g., DEMO2500001',
+              hintText: 'e.g., MUR2500001',
               prefixIcon: Icon(Icons.school_outlined, color: AppColors.forestGreen),
             ),
           ),

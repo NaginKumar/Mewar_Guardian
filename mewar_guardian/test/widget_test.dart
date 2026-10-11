@@ -146,7 +146,7 @@ void main() {
       await tester.tap(find.text('Send Verification OTP'));
       await tester.pump();
 
-      expect(find.text('Please enter a valid university enrollment number (e.g., DEMO2500001).'), findsOneWidget);
+      expect(find.text('Please enter a valid university enrollment number (e.g., MUR2500001).'), findsOneWidget);
     });
   });
 

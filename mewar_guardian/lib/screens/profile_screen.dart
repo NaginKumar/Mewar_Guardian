@@ -412,7 +412,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     TextField(
                       controller: _enrollController,
                       decoration: const InputDecoration(
-                        labelText: 'Enrollment Number (e.g., DEMO2500001)',
+                        labelText: 'Enrollment Number (e.g., MUR2500001)',
                         prefixIcon: Icon(Icons.badge_outlined, color: AppColors.forestGreen),
                       ),
                     ),

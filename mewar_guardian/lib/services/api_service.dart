@@ -50,10 +50,10 @@ class ApiService extends ChangeNotifier {
       isLoggedIn = false;
     }
     
-    // Load custom baseUrl if saved (strictly enforce production in release builds)
+    // Load custom baseUrl if saved (strictly enforce production for local loopbacks)
     final savedUrl = prefs.getString('custom_base_url');
     if (savedUrl != null && savedUrl.isNotEmpty) {
-      if (kReleaseMode && (savedUrl.contains('127.0.0.1') || savedUrl.contains('localhost') || savedUrl.contains('10.0.2.2'))) {
+      if (savedUrl.contains('127.0.0.1') || savedUrl.contains('localhost') || savedUrl.contains('10.0.2.2')) {
         baseUrl = productionUrl;
         await prefs.setString('custom_base_url', productionUrl);
       } else {
@@ -91,7 +91,7 @@ class ApiService extends ChangeNotifier {
           "enrollment": enrollment.trim().toUpperCase(),
           "password": password.trim(),
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 201 && body['success'] == true) {
@@ -120,7 +120,7 @@ class ApiService extends ChangeNotifier {
           "identifier": identifier.trim(),
           "password": password.trim(),
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body['success'] == true) {
@@ -210,7 +210,7 @@ class ApiService extends ChangeNotifier {
           "enrollment": enrollment.trim().toUpperCase(),
           "mobile": mobile.trim(),
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body['success'] == true) {
@@ -239,7 +239,7 @@ class ApiService extends ChangeNotifier {
           "enrollment": enrollment.trim().toUpperCase(),
           "otp": otp.trim(),
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body['success'] == true) {
@@ -269,7 +269,7 @@ class ApiService extends ChangeNotifier {
           "reset_token": resetToken.trim(),
           "new_password": newPassword.trim(),
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body['success'] == true) {
@@ -356,7 +356,7 @@ class ApiService extends ChangeNotifier {
       final response = await http.get(
         Uri.parse('$baseUrl/api/health'),
         headers: {'ngrok-skip-browser-warning': 'true'},
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         isConnected = true;
@@ -365,16 +365,18 @@ class ApiService extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Only probe local LAN in debug mode if explicitly targeting local dev
-    if (!kReleaseMode && baseUrl == defaultLocalUrl) {
+    // If current baseUrl failed and it is not production, automatically fallback to productionUrl
+    if (baseUrl != productionUrl) {
       try {
         final r = await http.get(
-          Uri.parse('$defaultLanUrl/api/health'),
+          Uri.parse('$productionUrl/api/health'),
           headers: {'ngrok-skip-browser-warning': 'true'},
-        ).timeout(const Duration(seconds: 2));
+        ).timeout(const Duration(seconds: 10));
         if (r.statusCode == 200) {
-          baseUrl = defaultLanUrl;
+          baseUrl = productionUrl;
           isConnected = true;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('custom_base_url', productionUrl);
           notifyListeners();
           return true;
         }

@@ -70,7 +70,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final mobile = _mobileController.text.trim();
 
     if (enroll.isEmpty || !enroll.startsWith("MUR")) {
-      setState(() => _errorMessage = "Please enter a valid university enrollment number (e.g., DEMO2500001).");
+      setState(() => _errorMessage = "Please enter a valid university enrollment number (e.g., MUR2500001).");
       return;
     }
     if (mobile.length != 10 || !RegExp(r'^[0-9]+$').hasMatch(mobile)) {
@@ -388,7 +388,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           controller: _enrollController,
           decoration: const InputDecoration(
             labelText: 'Enrollment Number',
-            hintText: 'e.g., DEMO2500001',
+            hintText: 'e.g., MUR2500001',
             prefixIcon: Icon(Icons.badge_outlined, color: AppColors.forestGreen),
           ),
         ),

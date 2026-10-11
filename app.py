@@ -646,6 +646,7 @@ def _check_rate_limit(key: str, max_requests: int = 15, window_sec: int = 60) ->
         return True
 
 @app.route("/api/register", methods=["POST"])
+@app.route("/api/auth/register", methods=["POST"])
 def api_register():
     ip = request.remote_addr or "127.0.0.1"
     if not _check_rate_limit(f"reg:{ip}", max_requests=15, window_sec=60):
@@ -674,13 +675,14 @@ def api_register():
     }), 201
 
 @app.route("/api/login", methods=["POST"])
+@app.route("/api/auth/login", methods=["POST"])
 def api_login():
     ip = request.remote_addr or "127.0.0.1"
     if not _check_rate_limit(f"login:{ip}", max_requests=25, window_sec=60):
         return jsonify({"success": False, "error": "Too many login attempts. Please wait 1 minute."}), 429
 
     body = request.get_json(force=True)
-    ident = body.get("identifier", "").strip()
+    ident = (body.get("identifier") or body.get("enrollment") or body.get("mobile") or "").strip()
     pwd = body.get("password", "").strip()
 
     if not ident or not pwd:

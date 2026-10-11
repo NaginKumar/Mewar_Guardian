@@ -34,7 +34,7 @@ def test_backend_e2e():
     payload1 = {
         "student_name": "Aarav Sharma (DEMO ONLY)",
         "mobile_number": "9000000001",
-        "enrollment_number": "DEMO2500001",
+        "enrollment_number": "MUR2500001",
         "emergency_type": "Fire",
         "description": "Dense smoke near lab exit on ground floor",
         "location": "Engineering Block",
@@ -72,7 +72,7 @@ def test_backend_e2e():
     payload2 = {
         "student_name": "Aarav Sharma (DEMO ONLY)",
         "mobile_number": "9000000001",
-        "enrollment_number": "DEMO2500001",
+        "enrollment_number": "MUR2500001",
         "emergency_type": "Medical Emergency",
         "description": "Student fainted near sports field",
         "location": "Football Ground",

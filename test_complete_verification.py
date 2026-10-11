@@ -108,7 +108,7 @@ def test_chat_and_emergency_with_photo(photo_url):
     emergency_payload = {
         "student_name": "Aarav Sharma",
         "mobile_number": "9000000001",
-        "enrollment_number": "DEMO2500001",
+        "enrollment_number": "MUR2500001",
         "emergency_type": "Medical Emergency",
         "description": "Student feeling dizzy outside Admin Block with photo proof.",
         "location": "Admin Block",
