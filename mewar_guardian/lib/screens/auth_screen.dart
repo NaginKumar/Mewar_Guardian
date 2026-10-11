@@ -309,12 +309,13 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                           child: Text(
                             api.isConnected
                                 ? "Backend Live (${Uri.tryParse(api.baseUrl)?.host ?? api.baseUrl})"
-                                : "Connecting to campus server...",
+                                : (api.connectionStatusDetail.isNotEmpty ? api.connectionStatusDetail : "Connecting to campus server..."),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                               color: api.isConnected ? AppColors.forestGreen : AppColors.charcoal,
                             ),
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),

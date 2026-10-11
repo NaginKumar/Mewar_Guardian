@@ -18,6 +18,7 @@ class ApiService extends ChangeNotifier {
 
   String baseUrl = productionUrl;
   bool isConnected = false;
+  String connectionStatusDetail = "";
   String studentName = "";
   String mobileNumber = "";
   String enrollmentNumber = "";
@@ -94,6 +95,14 @@ class ApiService extends ChangeNotifier {
     final str = e.toString().toLowerCase();
     if (e is TimeoutException || str.contains('timeout')) {
       return "Backend server response timed out. The server is likely waking up from idle mode (Render cold start). Please tap Retry.";
+    }
+    if (str.contains('handshake') ||
+        str.contains('certificate') ||
+        str.contains('certpath') ||
+        str.contains('trust anchor') ||
+        str.contains('tlsexception') ||
+        str.contains('ssl')) {
+      return "Campus Wi-Fi portal (Mewar WIFI) is blocking secure connections. Please open your browser to log in to the Wi-Fi portal or switch to Mobile Data.";
     }
     if (str.contains('socketexception') || str.contains('failed host lookup') || str.contains('network is unreachable')) {
       return "Cannot reach campus safety server. Please verify your internet connection (Wi-Fi/Mobile Data) and tap Retry.";
@@ -443,6 +452,7 @@ class ApiService extends ChangeNotifier {
       '$baseUrl/api/health',
     ];
 
+    dynamic lastError;
     for (final url in candidates) {
       try {
         final response = await http.get(
@@ -452,10 +462,13 @@ class ApiService extends ChangeNotifier {
 
         if (response.statusCode == 200) {
           isConnected = true;
+          connectionStatusDetail = "Connected to Mewar Guardian Backend (${Uri.tryParse(baseUrl)?.host ?? baseUrl})";
           notifyListeners();
           return true;
         }
-      } catch (_) {}
+      } catch (e) {
+        lastError = e;
+      }
     }
 
     // If current baseUrl failed and it is not production, automatically fallback to productionUrl
@@ -469,16 +482,22 @@ class ApiService extends ChangeNotifier {
           if (r.statusCode == 200) {
             baseUrl = productionUrl;
             isConnected = true;
+            connectionStatusDetail = "Connected to Mewar Guardian Backend (mewar-guardian.onrender.com)";
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('custom_base_url', productionUrl);
             notifyListeners();
             return true;
           }
-        } catch (_) {}
+        } catch (e) {
+          lastError = e;
+        }
       }
     }
 
     isConnected = false;
+    connectionStatusDetail = lastError != null
+        ? _classifyNetworkException(lastError)
+        : "Cannot reach campus safety backend.";
     notifyListeners();
     return false;
   }
