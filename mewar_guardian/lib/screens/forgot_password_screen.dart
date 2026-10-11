@@ -76,7 +76,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
     if (email.isEmpty || !emailRegex.hasMatch(email)) {
-      setState(() => _errorMessage = "Please enter your valid registered university email address (e.g., student@mewaruniversity.org).");
+      setState(() => _errorMessage = "Please enter your registered personal email address (e.g., yourname@gmail.com).");
       return;
     }
 
@@ -399,8 +399,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           controller: _emailController,
           keyboardType: TextInputType.emailAddress,
           decoration: const InputDecoration(
-            labelText: 'Registered University Email',
-            hintText: 'e.g., student@mewaruniversity.org',
+            labelText: 'Registered Personal Email',
+            hintText: 'Enter your email (e.g., yourname@gmail.com)',
             prefixIcon: Icon(Icons.email_outlined, color: AppColors.forestGreen),
           ),
         ),

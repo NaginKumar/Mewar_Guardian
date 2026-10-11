@@ -96,7 +96,15 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
       setState(() => _regError = "Full name must be at least 2 characters.");
       return;
     }
-    if (mobile.length != 10 || !RegExp(r'^[0-9]+$').hasMatch(mobile)) {
+
+    String cleanMobile = mobile.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanMobile.startsWith('91') && cleanMobile.length == 12) {
+      cleanMobile = cleanMobile.substring(2);
+    } else if (cleanMobile.startsWith('0') && cleanMobile.length == 11) {
+      cleanMobile = cleanMobile.substring(1);
+    }
+
+    if (cleanMobile.length != 10) {
       setState(() => _regError = "Enter a valid 10-digit mobile number.");
       return;
     }
@@ -105,8 +113,12 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
       return;
     }
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
-    if (email.isNotEmpty && !emailRegex.hasMatch(email)) {
-      setState(() => _regError = "Enter a valid university email address (e.g., student@mewaruniversity.org).");
+    if (email.isEmpty) {
+      setState(() => _regError = "Please enter your personal email address (e.g., yourname@gmail.com).");
+      return;
+    }
+    if (!emailRegex.hasMatch(email)) {
+      setState(() => _regError = "Please enter a valid personal email address (e.g., yourname@gmail.com).");
       return;
     }
     if (pwd.length < 4) {
@@ -124,7 +136,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     });
 
     final api = Provider.of<ApiService>(context, listen: false);
-    final res = await api.register(name, mobile, enroll, pwd, email: email.isNotEmpty ? email : null);
+    final res = await api.register(name, cleanMobile, enroll, pwd, email: email);
 
     if (!mounted) return;
     setState(() => _isRegLoading = false);
@@ -632,8 +644,8 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _regEmailController,
             keyboardType: TextInputType.emailAddress,
             decoration: const InputDecoration(
-              labelText: 'University Email Address',
-              hintText: 'e.g., student@mewaruniversity.org (For password recovery)',
+              labelText: 'Personal Email Address',
+              hintText: 'Enter your email (e.g., yourname@gmail.com)',
               prefixIcon: Icon(Icons.email_outlined, color: AppColors.forestGreen),
             ),
           ),

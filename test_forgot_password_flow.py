@@ -15,7 +15,7 @@ def run_tests():
     timestamp = int(time.time())
     test_enrollment = f"MURTEST{timestamp % 100000}"
     test_mobile = f"98{secrets.randbelow(90000000) + 10000000}"
-    test_email = f"test.student.{timestamp % 100000}@mewaruniversity.org"
+    test_email = f"test.student.{timestamp % 100000}@gmail.com"
     original_pwd = "InitialSecurePass@2026"
     new_pwd = "NewUpdatedPass#2026"
 
@@ -44,7 +44,7 @@ def run_tests():
 
         # 2. Unknown account / mismatched email anti-enumeration check
         print("\n[TEST 2] Testing generic response on mismatched account/email (Anti-enumeration)...")
-        fake_payload = {"enrollment": "MUR9999999", "email": "fake.student@mewaruniversity.org"}
+        fake_payload = {"enrollment": "MUR9999999", "email": "fake.student@gmail.com"}
         r = requests.post(f"{BASE_URL}/api/auth/forgot-password", json=fake_payload, timeout=5)
         assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
         res = r.json()

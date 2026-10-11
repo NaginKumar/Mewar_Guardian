@@ -134,7 +134,7 @@ void main() {
       expect(find.text('Password Recovery'), findsOneWidget);
       expect(find.text('Identify Your Account'), findsOneWidget);
       expect(find.text('Enrollment Number'), findsOneWidget);
-      expect(find.text('Registered University Email'), findsOneWidget);
+      expect(find.text('Registered Personal Email'), findsOneWidget);
       expect(find.text('Send Recovery Code via Email'), findsOneWidget);
     });
 
