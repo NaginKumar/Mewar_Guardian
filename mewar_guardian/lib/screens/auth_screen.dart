@@ -272,6 +272,64 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
               ),
               const SizedBox(height: 18),
 
+              // Live Backend Connection Pill
+              Consumer<ApiService>(
+                builder: (context, api, _) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: api.isConnected ? AppColors.forestGreen.withOpacity(0.08) : AppColors.safetyOrange.withOpacity(0.09),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: api.isConnected ? AppColors.forestGreen.withOpacity(0.3) : AppColors.safetyOrange.withOpacity(0.35),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          api.isConnected ? Icons.cloud_done_rounded : Icons.cloud_sync_rounded,
+                          size: 16,
+                          color: api.isConnected ? AppColors.forestGreen : AppColors.safetyOrange,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            api.isConnected
+                                ? "Backend Live (${Uri.tryParse(api.baseUrl)?.host ?? api.baseUrl})"
+                                : "Connecting to campus server...",
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: api.isConnected ? AppColors.forestGreen : AppColors.charcoal,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (!api.isConnected)
+                          GestureDetector(
+                            onTap: () async {
+                              await api.checkBackendHealth();
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              child: Text(
+                                "Check",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.forestGreen,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
               // Tab Content Card
               Container(
                 padding: const EdgeInsets.all(20),
@@ -288,7 +346,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                   ],
                 ),
                 child: SizedBox(
-                  height: 380,
+                  height: 480,
                   child: TabBarView(
                     controller: _tabController,
                     children: [
@@ -326,15 +384,62 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
           const SizedBox(height: 16),
           if (_loginError != null) ...[
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.criticalRed.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
+                color: AppColors.criticalRed.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppColors.criticalRed.withOpacity(0.3)),
               ),
-              child: Text(
-                _loginError!,
-                style: const TextStyle(color: AppColors.criticalRed, fontSize: 12, fontWeight: FontWeight.bold),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline, color: AppColors.criticalRed, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _loginError!,
+                          style: const TextStyle(
+                            color: AppColors.criticalRed,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_loginError!.toLowerCase().contains('connection') ||
+                      _loginError!.toLowerCase().contains('timed out') ||
+                      _loginError!.toLowerCase().contains('waking up') ||
+                      _loginError!.toLowerCase().contains('server') ||
+                      _loginError!.toLowerCase().contains('network')) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _isLoginLoading ? null : _handleLogin,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          backgroundColor: AppColors.forestGreen.withOpacity(0.1),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.refresh, size: 14, color: AppColors.forestGreen),
+                        label: const Text(
+                          "Retry Sign In",
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.forestGreen,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             const SizedBox(height: 12),
@@ -435,15 +540,62 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
           const SizedBox(height: 12),
           if (_regError != null) ...[
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.criticalRed.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
+                color: AppColors.criticalRed.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppColors.criticalRed.withOpacity(0.3)),
               ),
-              child: Text(
-                _regError!,
-                style: const TextStyle(color: AppColors.criticalRed, fontSize: 12, fontWeight: FontWeight.bold),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.error_outline, color: AppColors.criticalRed, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _regError!,
+                          style: const TextStyle(
+                            color: AppColors.criticalRed,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_regError!.toLowerCase().contains('connection') ||
+                      _regError!.toLowerCase().contains('timed out') ||
+                      _regError!.toLowerCase().contains('waking up') ||
+                      _regError!.toLowerCase().contains('server') ||
+                      _regError!.toLowerCase().contains('network')) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _isRegLoading ? null : _handleRegister,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          backgroundColor: AppColors.forestGreen.withOpacity(0.1),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.refresh, size: 14, color: AppColors.forestGreen),
+                        label: const Text(
+                          "Retry Registration",
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.forestGreen,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             const SizedBox(height: 10),

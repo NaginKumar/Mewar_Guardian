@@ -52,19 +52,59 @@ class ApiService extends ChangeNotifier {
       isLoggedIn = false;
     }
     
-    // Load custom baseUrl if saved (strictly enforce production for local loopbacks)
-    final savedUrl = prefs.getString('custom_base_url');
-    if (savedUrl != null && savedUrl.isNotEmpty) {
-      if (savedUrl.contains('127.0.0.1') || savedUrl.contains('localhost') || savedUrl.contains('10.0.2.2')) {
-        baseUrl = productionUrl;
-        await prefs.setString('custom_base_url', productionUrl);
-      } else {
-        baseUrl = savedUrl;
-      }
-    } else {
+    // Strictly enforce production HTTPS URL in release mode, and sanitize any stale LAN/local loopback
+    if (kReleaseMode) {
       baseUrl = productionUrl;
+      await prefs.setString('custom_base_url', productionUrl);
+    } else {
+      final savedUrl = prefs.getString('custom_base_url');
+      if (savedUrl != null && savedUrl.isNotEmpty) {
+        if (savedUrl.contains('127.0.0.1') || savedUrl.contains('localhost') || savedUrl.contains('10.0.2.2') || savedUrl.contains('10.168.') || savedUrl.contains('ngrok')) {
+          baseUrl = productionUrl;
+          await prefs.setString('custom_base_url', productionUrl);
+        } else {
+          baseUrl = savedUrl;
+        }
+      } else {
+        baseUrl = productionUrl;
+      }
     }
     notifyListeners();
+  }
+
+  String _parseErrorResponse(http.Response response, {String fallback = 'Request failed.'}) {
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['error'] != null && body['error'].toString().isNotEmpty) {
+        return body['error'].toString();
+      }
+      if (body is Map && body['message'] != null && body['message'].toString().isNotEmpty) {
+        return body['message'].toString();
+      }
+    } catch (_) {
+      // Server returned non-JSON error page (e.g., Render 502 Bad Gateway / 503 Service Unavailable)
+      if (response.statusCode >= 500) {
+        return "Backend server is waking up or restarting (HTTP ${response.statusCode}). Please wait a few seconds and tap Retry.";
+      }
+    }
+    return "$fallback (Status ${response.statusCode})";
+  }
+
+  String _classifyNetworkException(dynamic e) {
+    final str = e.toString().toLowerCase();
+    if (e is TimeoutException || str.contains('timeout')) {
+      return "Backend server response timed out. The server is likely waking up from idle mode (Render cold start). Please tap Retry.";
+    }
+    if (str.contains('socketexception') || str.contains('failed host lookup') || str.contains('network is unreachable')) {
+      return "Cannot reach campus safety server. Please verify your internet connection (Wi-Fi/Mobile Data) and tap Retry.";
+    }
+    if (str.contains('connection refused')) {
+      return "Connection refused by server. The backend may be restarting, please tap Retry.";
+    }
+    if (str.contains('formatexception')) {
+      return "Server returned an unexpected format. Campus safety service is restarting, please retry in a moment.";
+    }
+    return "Network error: ${e.toString().replaceAll('Exception:', '').trim()}";
   }
 
   Future<void> _persistStudent(String name, String mobile, String enrollment, String roleStr, {String? email}) async {
@@ -87,70 +127,101 @@ class ApiService extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>> register(String name, String mobile, String enrollment, String password, {String? email}) async {
-    try {
-      final payload = <String, dynamic>{
-        "name": name.trim(),
-        "mobile": mobile.trim(),
-        "enrollment": enrollment.trim().toUpperCase(),
-        "password": password.trim(),
-      };
-      if (email != null && email.trim().isNotEmpty) {
-        payload["email"] = email.trim();
-      }
-
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/register'),
-        headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 15));
-
-      final body = jsonDecode(response.body);
-      if (response.statusCode == 201 && body['success'] == true) {
-        final student = body['student'] ?? {};
-        await _persistStudent(
-          student['student_name'] ?? name,
-          student['mobile_number'] ?? mobile,
-          student['enrollment_number'] ?? enrollment.toUpperCase(),
-          student['role'] ?? 'Student',
-          email: student['email'] ?? email,
-        );
-        return {"success": true, "message": body['message'] ?? 'Registered successfully'};
-      } else {
-        return {"success": false, "error": body['error'] ?? 'Registration failed. Please try again.'};
-      }
-    } catch (e) {
-      return {"success": false, "error": "Connection unavailable. Please verify backend connection."};
+    final payload = <String, dynamic>{
+      "name": name.trim(),
+      "mobile": mobile.trim(),
+      "enrollment": enrollment.trim().toUpperCase(),
+      "password": password.trim(),
+    };
+    if (email != null && email.trim().isNotEmpty) {
+      payload["email"] = email.trim();
     }
+
+    // Attempt registration with 25s timeout and automatic single cold-start retry
+    for (int attempt = 1; attempt <= 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/api/register'),
+          headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+          body: jsonEncode(payload),
+        ).timeout(const Duration(seconds: 25));
+
+        if (response.statusCode == 201) {
+          final body = jsonDecode(response.body);
+          if (body['success'] == true) {
+            final student = body['student'] ?? {};
+            await _persistStudent(
+              student['student_name'] ?? name,
+              student['mobile_number'] ?? mobile,
+              student['enrollment_number'] ?? enrollment.toUpperCase(),
+              student['role'] ?? 'Student',
+              email: student['email'] ?? email,
+            );
+            isConnected = true;
+            notifyListeners();
+            return {"success": true, "message": body['message'] ?? 'Registered successfully'};
+          }
+        }
+
+        // Return exact server validation error (e.g. 400 Duplicate Account, Invalid MUR, etc.)
+        final errorMsg = _parseErrorResponse(response, fallback: 'Registration failed. Please try again.');
+        return {"success": false, "error": errorMsg};
+      } catch (e) {
+        if (attempt == 1 && (e is TimeoutException || e.toString().toLowerCase().contains('timeout'))) {
+          // Cold start detected, try once more automatically
+          continue;
+        }
+        return {"success": false, "error": _classifyNetworkException(e)};
+      }
+    }
+    return {
+      "success": false,
+      "error": "Server is taking too long to respond. Render backend may still be waking up. Please tap Retry."
+    };
   }
 
   Future<Map<String, dynamic>> login(String identifier, String password) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/login'),
-        headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-        body: jsonEncode({
-          "identifier": identifier.trim(),
-          "password": password.trim(),
-        }),
-      ).timeout(const Duration(seconds: 15));
+    for (int attempt = 1; attempt <= 2; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/api/login'),
+          headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+          body: jsonEncode({
+            "identifier": identifier.trim(),
+            "password": password.trim(),
+          }),
+        ).timeout(const Duration(seconds: 25));
 
-      final body = jsonDecode(response.body);
-      if (response.statusCode == 200 && body['success'] == true) {
-        final student = body['student'] ?? {};
-        await _persistStudent(
-          student['student_name'] ?? '',
-          student['mobile_number'] ?? '',
-          student['enrollment_number'] ?? identifier.toUpperCase(),
-          student['role'] ?? 'Student',
-          email: student['email'],
-        );
-        return {"success": true, "student": student};
-      } else {
-        return {"success": false, "error": body['error'] ?? 'Invalid credentials.'};
+        if (response.statusCode == 200) {
+          final body = jsonDecode(response.body);
+          if (body['success'] == true) {
+            final student = body['student'] ?? {};
+            await _persistStudent(
+              student['student_name'] ?? '',
+              student['mobile_number'] ?? '',
+              student['enrollment_number'] ?? identifier.toUpperCase(),
+              student['role'] ?? 'Student',
+              email: student['email'],
+            );
+            isConnected = true;
+            notifyListeners();
+            return {"success": true, "student": student};
+          }
+        }
+
+        final errorMsg = _parseErrorResponse(response, fallback: 'Invalid credentials.');
+        return {"success": false, "error": errorMsg};
+      } catch (e) {
+        if (attempt == 1 && (e is TimeoutException || e.toString().toLowerCase().contains('timeout'))) {
+          continue;
+        }
+        return {"success": false, "error": _classifyNetworkException(e)};
       }
-    } catch (e) {
-      return {"success": false, "error": "Connection unavailable. Please verify backend connection."};
     }
+    return {
+      "success": false,
+      "error": "Server response timed out. Please tap Retry."
+    };
   }
 
   Future<void> logout() async {
@@ -203,7 +274,7 @@ class ApiService extends ChangeNotifier {
           "enrollment": enrollmentNumber,
           "password": password.trim(),
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body['success'] == true) {
@@ -213,7 +284,7 @@ class ApiService extends ChangeNotifier {
         return {"success": false, "error": body['error'] ?? 'Could not delete account.'};
       }
     } catch (e) {
-      return {"success": false, "error": "Connection unavailable. Please retry."};
+      return {"success": false, "error": _classifyNetworkException(e)};
     }
   }
 
@@ -231,23 +302,21 @@ class ApiService extends ChangeNotifier {
         Uri.parse('$baseUrl/api/auth/forgot-password'),
         headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 25));
 
-      final body = jsonDecode(response.body);
-      if (response.statusCode == 200 && body['success'] == true) {
-        return {
-          "success": true,
-          "message": body['message'] ?? 'Password reset verification code sent to registered email.',
-          "dev_otp": body['dev_otp'],
-        };
-      } else {
-        return {
-          "success": false,
-          "error": body['error'] ?? 'Could not initiate password recovery.',
-        };
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body['success'] == true) {
+          return {
+            "success": true,
+            "message": body['message'] ?? 'Password reset verification code sent to registered email.',
+            "dev_otp": body['dev_otp'],
+          };
+        }
       }
+      return {"success": false, "error": _parseErrorResponse(response, fallback: 'Could not initiate password recovery.')};
     } catch (e) {
-      return {"success": false, "error": "Connection unavailable. Please verify connection and retry."};
+      return {"success": false, "error": _classifyNetworkException(e)};
     }
   }
 
@@ -260,23 +329,21 @@ class ApiService extends ChangeNotifier {
           "enrollment": enrollment.trim().toUpperCase(),
           "otp": otp.trim(),
         }),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 20));
 
-      final body = jsonDecode(response.body);
-      if (response.statusCode == 200 && body['success'] == true) {
-        return {
-          "success": true,
-          "message": body['message'] ?? 'Verification successful.',
-          "reset_token": body['reset_token'],
-        };
-      } else {
-        return {
-          "success": false,
-          "error": body['error'] ?? 'Invalid verification code.',
-        };
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body['success'] == true) {
+          return {
+            "success": true,
+            "message": body['message'] ?? 'Verification successful.',
+            "reset_token": body['reset_token'],
+          };
+        }
       }
+      return {"success": false, "error": _parseErrorResponse(response, fallback: 'Invalid verification code.')};
     } catch (e) {
-      return {"success": false, "error": "Connection unavailable. Please retry."};
+      return {"success": false, "error": _classifyNetworkException(e)};
     }
   }
 
@@ -290,22 +357,20 @@ class ApiService extends ChangeNotifier {
           "reset_token": resetToken.trim(),
           "new_password": newPassword.trim(),
         }),
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 20));
 
-      final body = jsonDecode(response.body);
-      if (response.statusCode == 200 && body['success'] == true) {
-        return {
-          "success": true,
-          "message": body['message'] ?? 'Password updated successfully.',
-        };
-      } else {
-        return {
-          "success": false,
-          "error": body['error'] ?? 'Failed to update password.',
-        };
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body['success'] == true) {
+          return {
+            "success": true,
+            "message": body['message'] ?? 'Password updated successfully.',
+          };
+        }
       }
+      return {"success": false, "error": _parseErrorResponse(response, fallback: 'Failed to update password.')};
     } catch (e) {
-      return {"success": false, "error": "Connection unavailable. Please retry."};
+      return {"success": false, "error": _classifyNetworkException(e)};
     }
   }
 
@@ -316,7 +381,7 @@ class ApiService extends ChangeNotifier {
       final response = await http.get(
         Uri.parse('$baseUrl/api/my-emergencies?enrollment=$ident'),
         headers: {'ngrok-skip-browser-warning': 'true'},
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
@@ -349,7 +414,7 @@ class ApiService extends ChangeNotifier {
           "mobile": mobile,
           "enrollment": enrollment,
         }),
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 10));
     } catch (e) {
       if (kDebugMode) print('Failed to sync profile: $e');
     }
@@ -361,7 +426,7 @@ class ApiService extends ChangeNotifier {
     final clean = newUrl.trim().replaceAll(RegExp(r'/+$'), '');
     if (clean.isEmpty || clean.toLowerCase() == 'default') {
       baseUrl = productionUrl;
-    } else if (kReleaseMode && (clean.contains('127.0.0.1') || clean.contains('localhost') || clean.contains('10.0.2.2'))) {
+    } else if (kReleaseMode && (clean.contains('127.0.0.1') || clean.contains('localhost') || clean.contains('10.0.2.2') || clean.contains('10.168.'))) {
       baseUrl = productionUrl;
     } else {
       baseUrl = clean;
@@ -373,35 +438,44 @@ class ApiService extends ChangeNotifier {
   }
 
   Future<bool> checkBackendHealth() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/health'),
-        headers: {'ngrok-skip-browser-warning': 'true'},
-      ).timeout(const Duration(seconds: 10));
+    final candidates = [
+      '$baseUrl/health',
+      '$baseUrl/api/health',
+    ];
 
-      if (response.statusCode == 200) {
-        isConnected = true;
-        notifyListeners();
-        return true;
-      }
-    } catch (_) {}
-
-    // If current baseUrl failed and it is not production, automatically fallback to productionUrl
-    if (baseUrl != productionUrl) {
+    for (final url in candidates) {
       try {
-        final r = await http.get(
-          Uri.parse('$productionUrl/api/health'),
+        final response = await http.get(
+          Uri.parse(url),
           headers: {'ngrok-skip-browser-warning': 'true'},
-        ).timeout(const Duration(seconds: 10));
-        if (r.statusCode == 200) {
-          baseUrl = productionUrl;
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200) {
           isConnected = true;
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('custom_base_url', productionUrl);
           notifyListeners();
           return true;
         }
       } catch (_) {}
+    }
+
+    // If current baseUrl failed and it is not production, automatically fallback to productionUrl
+    if (baseUrl != productionUrl) {
+      for (final endpoint in ['/health', '/api/health']) {
+        try {
+          final r = await http.get(
+            Uri.parse('$productionUrl$endpoint'),
+            headers: {'ngrok-skip-browser-warning': 'true'},
+          ).timeout(const Duration(seconds: 20));
+          if (r.statusCode == 200) {
+            baseUrl = productionUrl;
+            isConnected = true;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('custom_base_url', productionUrl);
+            notifyListeners();
+            return true;
+          }
+        } catch (_) {}
+      }
     }
 
     isConnected = false;

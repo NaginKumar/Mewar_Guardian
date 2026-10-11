@@ -49,8 +49,12 @@ def is_video_file(filename):
 
 CORS(
     app,
-    supports_credentials=True,
-    origins=["https://mewar-guardian.onrender.com", "http://localhost:3000", "http://localhost:5000", "http://127.0.0.1:5000", "*"]
+    resources={r"/*": {
+        "origins": ["https://mewar-guardian.onrender.com", "http://localhost:3000", "http://localhost:5000", "http://127.0.0.1:5000"],
+        "supports_credentials": True,
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "ngrok-skip-browser-warning"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    }}
 )
 
 def is_admin_authorized():
