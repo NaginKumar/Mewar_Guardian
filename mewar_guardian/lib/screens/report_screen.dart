@@ -55,13 +55,20 @@ class _ReportScreenState extends State<ReportScreen> {
   String _gpsStatus = "GPS not acquired";
   bool _isLoading = false;
 
+  String _selectedSeverity = 'HIGH';
+  final List<Map<String, dynamic>> _severities = [
+    {'level': 'CRITICAL', 'label': 'Critical', 'sub': 'Life Threat', 'color': AppColors.criticalRed},
+    {'level': 'HIGH', 'label': 'High', 'sub': 'Urgent Dispatch', 'color': AppColors.safetyOrange},
+    {'level': 'MEDIUM', 'label': 'Medium', 'sub': 'Assistance Needed', 'color': const Color(0xFFD97706)},
+    {'level': 'LOW', 'label': 'Low', 'sub': 'Advisory / Low', 'color': AppColors.forestGreen},
+  ];
+
   final List<Map<String, dynamic>> _categories = [
     {'name': 'Let AI Decide', 'icon': Icons.auto_awesome, 'color': AppColors.forestGreen},
     {'name': 'Medical Emergency', 'icon': Icons.medical_services, 'color': AppColors.criticalRed},
     {'name': 'Fire', 'icon': Icons.local_fire_department, 'color': AppColors.safetyOrange},
-    {'name': 'Security Issue', 'icon': Icons.security, 'color': AppColors.forestGreen},
     {'name': 'Accident', 'icon': Icons.car_crash, 'color': AppColors.safetyOrange},
-    {'name': 'Threat', 'icon': Icons.warning_amber_rounded, 'color': AppColors.criticalRed},
+    {'name': 'Security Threat', 'icon': Icons.security, 'color': AppColors.forestGreen},
     {'name': 'Harassment', 'icon': Icons.shield, 'color': AppColors.deepGreen},
     {'name': 'Other', 'icon': Icons.emergency, 'color': AppColors.charcoal},
   ];
@@ -334,17 +341,28 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
-  // --- PHOTO EVIDENCE HELPERS ---
+  // --- EVIDENCE MEDIA HELPERS (PHOTOS & VIDEOS COMBINED) ---
   Future<void> _pickPhoto(ImageSource source) async {
     try {
       final XFile? file = await _picker.pickImage(
         source: source,
-        maxWidth: 1600,
-        maxHeight: 1600,
+        maxWidth: 1920,
+        maxHeight: 1080,
         imageQuality: 85,
       );
       if (file != null) {
         final bytes = await file.readAsBytes();
+        if (bytes.lengthInBytes > 10 * 1024 * 1024) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Selected photo exceeds 10MB limit. Please choose a smaller photo."),
+                backgroundColor: AppColors.criticalRed,
+              ),
+            );
+          }
+          return;
+        }
         setState(() {
           _selectedPhotoBytes = bytes;
           _selectedPhotoName = file.name;
@@ -362,69 +380,6 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
-  void _showPhotoSourcePicker() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                "Attach Emergency Photo Evidence",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                "Attached photo will be sent directly to Campus Security response team.",
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
-                  child: const Icon(Icons.photo_camera_rounded, color: AppColors.forestGreen),
-                ),
-                title: const Text("Take Photo with Camera", style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text("Capture live incident scene", style: TextStyle(fontSize: 12)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickPhoto(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
-                  child: const Icon(Icons.photo_library_rounded, color: AppColors.forestGreen),
-                ),
-                title: const Text("Choose from Gallery", style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text("Select image from your device", style: TextStyle(fontSize: 12)),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _pickPhoto(ImageSource.gallery);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _removeSelectedPhoto() {
     setState(() {
       _selectedPhotoBytes = null;
@@ -432,7 +387,6 @@ class _ReportScreenState extends State<ReportScreen> {
     });
   }
 
-  // --- VIDEO EVIDENCE HELPERS ---
   Future<void> _pickVideo(ImageSource source) async {
     try {
       final XFile? file = await _picker.pickVideo(
@@ -478,7 +432,7 @@ class _ReportScreenState extends State<ReportScreen> {
     });
   }
 
-  void _showVideoSourcePicker() {
+  void _showUnifiedMediaPicker() {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.white,
@@ -498,24 +452,50 @@ class _ReportScreenState extends State<ReportScreen> {
               ),
               const SizedBox(height: 16),
               const Text(
-                "Attach Emergency Video Evidence",
+                "Attach Evidence Media",
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
               ),
               const SizedBox(height: 6),
               const Text(
-                "Up to 50MB. Will be streamed securely to Campus Security response center.",
+                "Photos (max 10MB) or Videos (max 50MB) will be securely transmitted to Campus Security responders.",
                 style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
+                  child: const Icon(Icons.camera_alt, color: AppColors.forestGreen),
+                ),
+                title: const Text("Take Photo with Camera", style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text("Capture live incident image", style: TextStyle(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickPhoto(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
+                  child: const Icon(Icons.photo_library_rounded, color: AppColors.forestGreen),
+                ),
+                title: const Text("Choose Photo from Gallery", style: TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text("Select image from device (max 10MB)", style: TextStyle(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickPhoto(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.safetyOrange.withOpacity(0.15), shape: BoxShape.circle),
                   child: const Icon(Icons.videocam_rounded, color: AppColors.safetyOrange),
                 ),
                 title: const Text("Record Video with Camera", style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text("Capture live video footage (up to 3 min)", style: TextStyle(fontSize: 12)),
+                subtitle: const Text("Record live video (up to 3 min)", style: TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickVideo(ImageSource.camera);
@@ -524,11 +504,11 @@ class _ReportScreenState extends State<ReportScreen> {
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: AppColors.mutedSage.withOpacity(0.4), shape: BoxShape.circle),
-                  child: const Icon(Icons.video_library_rounded, color: AppColors.forestGreen),
+                  decoration: BoxDecoration(color: AppColors.safetyOrange.withOpacity(0.15), shape: BoxShape.circle),
+                  child: const Icon(Icons.video_library_rounded, color: AppColors.safetyOrange),
                 ),
                 title: const Text("Choose Video from Gallery", style: TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: const Text("Select video file from device", style: TextStyle(fontSize: 12)),
+                subtitle: const Text("Select video file (max 50MB)", style: TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _pickVideo(ImageSource.gallery);
@@ -810,6 +790,120 @@ class _ReportScreenState extends State<ReportScreen> {
     }
   }
 
+  Color _getSeverityColor(String severity) {
+    switch (severity.toUpperCase()) {
+      case 'CRITICAL':
+        return AppColors.criticalRed;
+      case 'HIGH':
+        return AppColors.safetyOrange;
+      case 'MEDIUM':
+        return const Color(0xFFD97706);
+      case 'LOW':
+        return AppColors.forestGreen;
+      default:
+        return AppColors.safetyOrange;
+    }
+  }
+
+  // --- ACCIDENTAL TAP PROTECTION & CONFIRMATION ---
+  void _confirmAndSubmitEmergency() {
+    _stopListening();
+    final desc = _descController.text.trim();
+    if (desc.isEmpty && _selectedCategory == 'Let AI Decide') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Please provide a brief description or select an emergency category.'),
+          backgroundColor: AppColors.criticalRed,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.safetyOrange, size: 28),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "Confirm Emergency SOS",
+                style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.forestGreen, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Are you sure you want to trigger an immediate emergency alert?",
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.charcoal, fontSize: 14),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warmIvory,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Category: $_selectedCategory", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.forestGreen)),
+                  const SizedBox(height: 3),
+                  Text("Severity: $_selectedSeverity", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _getSeverityColor(_selectedSeverity))),
+                  const SizedBox(height: 3),
+                  Text("Location: ${_selectedLocation.name}", style: const TextStyle(fontSize: 12, color: AppColors.charcoal)),
+                  if (_selectedPhotoBytes != null || _selectedVideoBytes != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      "Media: ${[if (_selectedPhotoBytes != null) 'Photo', if (_selectedVideoBytes != null) 'Video'].join(' + ')} attached",
+                      style: const TextStyle(fontSize: 11, color: AppColors.forestGreen, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              "Campus Security responders will be dispatched immediately. Tap Dispatch to proceed.",
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: AppColors.border),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text("Cancel", style: TextStyle(color: AppColors.charcoal)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.safetyOrange,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.emergency_share, color: Colors.white, size: 18),
+            label: const Text("Dispatch SOS Now", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _submitEmergency();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   // --- SOS SUBMISSION ---
   void _submitEmergency() async {
     _stopListening();
@@ -863,6 +957,7 @@ class _ReportScreenState extends State<ReportScreen> {
       "mobile_number": mobile,
       "enrollment_number": enroll,
       "emergency_type": _selectedCategory == 'Let AI Decide' ? "" : _selectedCategory,
+      "priority": _selectedSeverity,
       "description": desc,
       "location": _selectedLocation.name,
     };
@@ -1073,10 +1168,106 @@ class _ReportScreenState extends State<ReportScreen> {
                       }).toList(),
                     ),
                   ),
+                  if (_selectedCategory == 'Harassment') ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.forestGreen.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.forestGreen.withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.shield_outlined, color: AppColors.forestGreen, size: 20),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Confidential Harassment Protection",
+                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.forestGreen),
+                                ),
+                                SizedBox(height: 3),
+                                Text(
+                                  "Harassment reports and uploaded evidence are encrypted and restricted solely to authorized female safety officers & anti-harassment panel.",
+                                  style: TextStyle(fontSize: 11, color: AppColors.charcoal, height: 1.3),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
-                  // 2. CAMPUS LOCATION SELECTION
-                  _buildSectionHeader("2. CAMPUS LOCATION"),
+                  // 2. SEVERITY / URGENCY LEVEL
+                  _buildSectionHeader("2. SEVERITY LEVEL"),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: _severities.map((sev) {
+                        final isSel = _selectedSeverity == sev['level'];
+                        final Color c = sev['color'] as Color;
+                        return Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(10),
+                              onTap: () => setState(() => _selectedSeverity = sev['level'] as String),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                                decoration: BoxDecoration(
+                                  color: isSel ? c : AppColors.warmIvory,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSel ? c : AppColors.border,
+                                    width: isSel ? 2 : 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      sev['label'] as String,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: isSel ? AppColors.white : AppColors.charcoal,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      sev['sub'] as String,
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: isSel ? AppColors.white.withOpacity(0.9) : AppColors.textMuted,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 1,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // 3. CAMPUS LOCATION SELECTION
+                  _buildSectionHeader("3. CAMPUS LOCATION"),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -1198,7 +1389,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _buildSectionHeader("3. EMERGENCY DETAILS"),
+                      _buildSectionHeader("4. EMERGENCY DETAILS"),
                       if (_descController.text.trim().isNotEmpty)
                         TextButton.icon(
                           style: TextButton.styleFrom(
@@ -1277,244 +1468,14 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 4. MEDIA EVIDENCE (PHOTO & VIDEO OPTIONAL)
-                  _buildSectionHeader("4. INCIDENT MEDIA EVIDENCE (OPTIONAL)"),
+                  // 5. COMBINED EVIDENCE MEDIA (PHOTOS & VIDEOS IN ONE SINGLE CARD)
+                  _buildSectionHeader("5. EVIDENCE MEDIA (PHOTOS & VIDEOS)"),
                   const SizedBox(height: 8),
-                  // PHOTO EVIDENCE CARD
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.photo_camera_rounded, size: 18, color: AppColors.forestGreen),
-                            SizedBox(width: 8),
-                            Text(
-                              "Incident Photo Evidence",
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          "Attach a photo of the incident scene to help security responders identify the situation.",
-                          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                        ),
-                        const SizedBox(height: 12),
-                        _selectedPhotoBytes == null
-                            ? Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 11),
-                                        side: const BorderSide(color: AppColors.forestGreen),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                      icon: const Icon(Icons.camera_alt, color: AppColors.forestGreen, size: 18),
-                                      label: const Text("Take Photo", style: TextStyle(color: AppColors.forestGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-                                      onPressed: () => _pickPhoto(ImageSource.camera),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 11),
-                                        side: const BorderSide(color: AppColors.forestGreen),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                      icon: const Icon(Icons.photo_library, color: AppColors.forestGreen, size: 18),
-                                      label: const Text("Photo Gallery", style: TextStyle(color: AppColors.forestGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-                                      onPressed: () => _pickPhoto(ImageSource.gallery),
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: Image.memory(
-                                      _selectedPhotoBytes!,
-                                      width: 60,
-                                      height: 60,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _selectedPhotoName ?? "Incident Photo",
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 3),
-                                        const Text(
-                                          "Photo ready for transmission",
-                                          style: TextStyle(fontSize: 11, color: AppColors.successGreen, fontWeight: FontWeight.w600),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined, color: AppColors.forestGreen, size: 20),
-                                    tooltip: "Change Photo",
-                                    onPressed: _showPhotoSourcePicker,
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: AppColors.criticalRed, size: 20),
-                                    tooltip: "Remove Photo",
-                                    onPressed: _removeSelectedPhoto,
-                                  ),
-                                ],
-                              ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // VIDEO EVIDENCE CARD
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.videocam_rounded, size: 20, color: AppColors.safetyOrange),
-                            SizedBox(width: 8),
-                            Text(
-                              "Incident Video Evidence",
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
-                            ),
-                            Spacer(),
-                            Text(
-                              "Max 50MB",
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.safetyOrange),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          "Record or upload video evidence (up to 3 min). Video will be securely streamed to the Campus Security command center.",
-                          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                        ),
-                        const SizedBox(height: 12),
-                        _selectedVideoBytes == null
-                            ? Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 11),
-                                        side: const BorderSide(color: AppColors.safetyOrange),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                      icon: const Icon(Icons.videocam, color: AppColors.safetyOrange, size: 18),
-                                      label: const Text("Record Video", style: TextStyle(color: AppColors.safetyOrange, fontWeight: FontWeight.bold, fontSize: 13)),
-                                      onPressed: () => _pickVideo(ImageSource.camera),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 11),
-                                        side: const BorderSide(color: AppColors.forestGreen),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                      icon: const Icon(Icons.video_library_rounded, color: AppColors.forestGreen, size: 18),
-                                      label: const Text("Video Gallery", style: TextStyle(color: AppColors.forestGreen, fontWeight: FontWeight.bold, fontSize: 13)),
-                                      onPressed: () => _pickVideo(ImageSource.gallery),
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Row(
-                                children: [
-                                  Container(
-                                    width: 60,
-                                    height: 60,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.safetyOrange.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: AppColors.safetyOrange.withOpacity(0.4)),
-                                    ),
-                                    child: const Center(
-                                      child: Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 34),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _selectedVideoName ?? "Incident Video",
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 3),
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: AppColors.warmIvory,
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: AppColors.border),
-                                              ),
-                                              child: Text(
-                                                "${(_selectedVideoSizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB",
-                                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.charcoal),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            const Text(
-                                              "Ready to stream",
-                                              style: TextStyle(fontSize: 11, color: AppColors.successGreen, fontWeight: FontWeight.w600),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.edit_outlined, color: AppColors.forestGreen, size: 20),
-                                    tooltip: "Change Video",
-                                    onPressed: _showVideoSourcePicker,
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline, color: AppColors.criticalRed, size: 20),
-                                    tooltip: "Remove Video",
-                                    onPressed: _removeSelectedVideo,
-                                  ),
-                                ],
-                              ),
-                      ],
-                    ),
-                  ),
+                  _buildCombinedMediaSection(),
                   const SizedBox(height: 20),
 
-                  // 5. STUDENT IDENTITY
-                  _buildSectionHeader("5. STUDENT INFORMATION"),
+                  // 6. STUDENT INFORMATION
+                  _buildSectionHeader("6. STUDENT INFORMATION"),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -1562,7 +1523,7 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // 5. PROMINENT SAFETY ORANGE SOS BUTTON
+                  // 5. PROMINENT SAFETY ORANGE SOS BUTTON WITH ACCIDENTAL TAP CONFIRMATION
                   SizedBox(
                     width: double.infinity,
                     height: 58,
@@ -1583,7 +1544,7 @@ class _ReportScreenState extends State<ReportScreen> {
                           color: AppColors.white,
                         ),
                       ),
-                      onPressed: _submitEmergency,
+                      onPressed: _confirmAndSubmitEmergency,
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -1808,6 +1769,298 @@ class _ReportScreenState extends State<ReportScreen> {
                   ),
                 ],
               ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCombinedMediaSection() {
+    final bool hasPhoto = _selectedPhotoBytes != null;
+    final bool hasVideo = _selectedVideoBytes != null;
+    final bool hasMedia = hasPhoto || hasVideo;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.perm_media_rounded, size: 20, color: AppColors.forestGreen),
+              const SizedBox(width: 8),
+              const Text(
+                "Evidence Media (Photos & Videos)",
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.warmIvory,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(
+                  hasMedia ? (hasPhoto && hasVideo ? "2 items" : "1 item") : "Optional",
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            "Attach photos or videos of the scene. Media is securely uploaded and shared directly with the responding security unit.",
+            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 14),
+
+          // Clean empty state inside the same card when no attachments
+          if (!hasMedia) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              decoration: BoxDecoration(
+                color: AppColors.warmIvory.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border, style: BorderStyle.solid),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.cloud_upload_outlined, size: 40, color: AppColors.forestGreen.withOpacity(0.6)),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "No Evidence Media Attached",
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.charcoal),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    "Add photo (max 10MB) or video (max 50MB)",
+                    style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 14),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.forestGreen,
+                      foregroundColor: AppColors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
+                    label: const Text("Add Media (Photo / Video)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    onPressed: _showUnifiedMediaPicker,
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            // Thumbnail Gallery inside the same card
+            Column(
+              children: [
+                if (hasPhoto) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.warmIvory.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.forestGreen.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                _selectedPhotoBytes!,
+                                width: 68,
+                                height: 68,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            Positioned(
+                              top: 2,
+                              left: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.forestGreen.withOpacity(0.85),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.photo_camera, size: 10, color: AppColors.white),
+                                    SizedBox(width: 2),
+                                    Text("Photo", style: TextStyle(fontSize: 9, color: AppColors.white, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _selectedPhotoName ?? "Incident Photo",
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.white,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: AppColors.border),
+                                    ),
+                                    child: Text(
+                                      "${(_selectedPhotoBytes!.lengthInBytes / (1024 * 1024)).toStringAsFixed(1)} MB",
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.charcoal),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    "Ready to upload",
+                                    style: TextStyle(fontSize: 11, color: AppColors.successGreen, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: AppColors.criticalRed, size: 22),
+                          tooltip: "Remove Photo",
+                          onPressed: _removeSelectedPhoto,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                if (hasVideo) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.safetyOrange.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.safetyOrange.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Container(
+                              width: 68,
+                              height: 68,
+                              decoration: BoxDecoration(
+                                color: Colors.black87,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 34),
+                            ),
+                            Positioned(
+                              top: 2,
+                              left: 2,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.safetyOrange.withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.videocam, size: 10, color: AppColors.white),
+                                    SizedBox(width: 2),
+                                    Text("Video", style: TextStyle(fontSize: 9, color: AppColors.white, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _selectedVideoName ?? "Incident Video",
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.white,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: AppColors.border),
+                                    ),
+                                    child: Text(
+                                      "${(_selectedVideoSizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB",
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.charcoal),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    "Ready to stream",
+                                    style: TextStyle(fontSize: 11, color: AppColors.successGreen, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: AppColors.criticalRed, size: 22),
+                          tooltip: "Remove Video",
+                          onPressed: _removeSelectedVideo,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Action to add more if one type is still missing
+                if (!hasPhoto || !hasVideo) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.forestGreen),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.add, size: 16, color: AppColors.forestGreen),
+                      label: Text(
+                        !hasPhoto ? "Add Photo Evidence" : "Add Video Footage",
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.forestGreen),
+                      ),
+                      onPressed: _showUnifiedMediaPicker,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ],

@@ -527,120 +527,101 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 ),
               ),
 
-            // Image Preview Bar if an image is selected
-            if (_selectedImageBytes != null)
+            // Combined Evidence Media Preview Bar (Photos & Videos)
+            if (_selectedImageBytes != null || _selectedVideoBytes != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: AppColors.white,
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  border: Border(bottom: BorderSide(color: AppColors.borderLight)),
+                ),
                 child: Row(
                   children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.memory(
-                            _selectedImageBytes!,
-                            width: 54,
-                            height: 54,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        Positioned(
-                          top: -6,
-                          right: -6,
-                          child: GestureDetector(
-                            onTap: _removeSelectedImage,
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: const BoxDecoration(
-                                color: AppColors.criticalRed,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                    if (_selectedImageBytes != null) ...[
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              _selectedImageBytes!,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _selectedImageName ?? "Incident Photo",
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const Text(
-                            "Ready to upload with your query",
-                            style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                          Positioned(
+                            top: -4,
+                            right: -4,
+                            child: GestureDetector(
+                              onTap: _removeSelectedImage,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.criticalRed,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close, size: 12, color: Colors.white),
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    TextButton(
-                      onPressed: _showAttachmentPicker,
-                      child: const Text("Replace", style: TextStyle(fontSize: 12, color: AppColors.forestGreen, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-              ),
-
-            // Video Preview Bar if a video is selected
-            if (_selectedVideoBytes != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: AppColors.white,
-                child: Row(
-                  children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          width: 54,
-                          height: 54,
-                          decoration: BoxDecoration(
-                            color: AppColors.safetyOrange.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.safetyOrange.withOpacity(0.3)),
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 28),
-                          ),
-                        ),
-                        Positioned(
-                          top: -6,
-                          right: -6,
-                          child: GestureDetector(
-                            onTap: _removeSelectedVideo,
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: const BoxDecoration(
-                                color: AppColors.criticalRed,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                      const SizedBox(width: 8),
+                    ],
+                    if (_selectedVideoBytes != null) ...[
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: AppColors.safetyOrange.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.safetyOrange.withOpacity(0.3)),
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 26),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 12),
+                          Positioned(
+                            top: -4,
+                            right: -4,
+                            child: GestureDetector(
+                              onTap: _removeSelectedVideo,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.criticalRed,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close, size: 12, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _selectedVideoName ?? "Incident Video",
+                            (_selectedImageBytes != null && _selectedVideoBytes != null)
+                                ? "Photo & Video attached"
+                                : (_selectedImageBytes != null ? (_selectedImageName ?? "Incident Photo") : (_selectedVideoName ?? "Incident Video")),
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            "${(_selectedVideoBytes!.lengthInBytes / (1024 * 1024)).toStringAsFixed(1)} MB • Video ready to upload",
+                            (_selectedImageBytes != null && _selectedVideoBytes != null)
+                                ? "Both files ready for AI analysis"
+                                : (_selectedImageBytes != null
+                                    ? "Photo ready for AI analysis"
+                                    : "${(_selectedVideoBytes!.lengthInBytes / (1024 * 1024)).toStringAsFixed(1)} MB • Video ready to upload"),
                             style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                           ),
                         ],
@@ -648,7 +629,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
                     ),
                     TextButton(
                       onPressed: _showAttachmentPicker,
-                      child: const Text("Replace", style: TextStyle(fontSize: 12, color: AppColors.forestGreen, fontWeight: FontWeight.bold)),
+                      child: const Text("Change", style: TextStyle(fontSize: 12, color: AppColors.forestGreen, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),

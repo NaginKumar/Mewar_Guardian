@@ -413,103 +413,126 @@ class _TrackingScreenState extends State<TrackingScreen> {
                 ],
               ),
             ),
-            if (_data?['photo_url'] != null && _data!['photo_url'].toString().isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.photo_camera_outlined, color: AppColors.forestGreen, size: 18),
-                        SizedBox(width: 6),
-                        Text(
-                          "ATTACHED INCIDENT EVIDENCE",
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        _data!['photo_url'].toString(),
-                        width: double.infinity,
-                        height: 180,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Text("Attached photo uploaded to safety records.", style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            // SINGLE COMBINED EVIDENCE MEDIA CARD (PHASE 3)
+            const SizedBox(height: 16),
+            Builder(
+              builder: (context) {
+                final photoUrl = _data?['photo_url']?.toString();
+                final videoUrl = _data?['video_url']?.toString();
+                final hasPhoto = photoUrl != null && photoUrl.isNotEmpty;
+                final hasVideo = videoUrl != null && videoUrl.isNotEmpty;
 
-            if (_data?['video_url'] != null && _data!['video_url'].toString().isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.videocam_rounded, color: AppColors.safetyOrange, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          "ATTACHED VIDEO FOOTAGE",
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.safetyOrange.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.safetyOrange.withOpacity(0.3)),
-                      ),
-                      child: const Row(
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 36),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                          const Icon(Icons.perm_media_outlined, color: AppColors.forestGreen, size: 18),
+                          const SizedBox(width: 8),
+                          const Text(
+                            "EVIDENCE MEDIA (PHOTOS & VIDEOS)",
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.forestGreen),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.warmIvory,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Text(
+                              (hasPhoto && hasVideo) ? "2 items" : ((hasPhoto || hasVideo) ? "1 item" : "No media"),
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (!hasPhoto && !hasVideo) ...[
+                        // Clean empty state inside the same card
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: AppColors.warmIvory.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: const Column(
+                            children: [
+                              Icon(Icons.photo_outlined, size: 30, color: AppColors.textMuted),
+                              SizedBox(height: 6),
+                              Text(
+                                "No photo or video evidence was attached to this alert.",
+                                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else ...[
+                        // Photos and videos displayed together inside the card
+                        if (hasPhoto) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              photoUrl,
+                              width: double.infinity,
+                              height: 180,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Text("Attached photo uploaded to safety records.", style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                            ),
+                          ),
+                        ],
+                        if (hasPhoto && hasVideo) const SizedBox(height: 12),
+                        if (hasVideo) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: AppColors.safetyOrange.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.safetyOrange.withOpacity(0.3)),
+                            ),
+                            child: const Row(
                               children: [
-                                Text(
-                                  "Incident Video Transmitted",
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
+                                Icon(Icons.play_circle_fill_rounded, color: AppColors.safetyOrange, size: 34),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "Incident Video Transmitted",
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.charcoal),
+                                      ),
+                                      SizedBox(height: 2),
+                                      Text(
+                                        "Stored in secure safety media storage for command center",
+                                        style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                SizedBox(height: 2),
-                                Text(
-                                  "Stored in secure safety media storage for command center",
-                                  style: TextStyle(fontSize: 11, color: AppColors.textMuted),
-                                ),
+                                Icon(Icons.check_circle, color: AppColors.successGreen, size: 20),
                               ],
                             ),
                           ),
-                          Icon(Icons.check_circle, color: AppColors.successGreen, size: 20),
                         ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
 
             if (recommendation.isNotEmpty) ...[
               const SizedBox(height: 16),
